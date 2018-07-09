@@ -3,6 +3,8 @@ Send SSH logins to SANS DShield.
 See https://isc.sans.edu/ssh.html
 """
 
+from __future__ import division, absolute_import
+
 import dateutil.parser
 import time
 import base64
@@ -15,25 +17,26 @@ from twisted.python import log
 from twisted.internet import threads, reactor
 
 import cowrie.core.output
+from cowrie.core.config import CONFIG
 
 
 class Output(cowrie.core.output.Output):
     """
     """
-    def __init__(self, cfg):
-        self.auth_key = cfg.get('output_dshield', 'auth_key')
-        self.userid = cfg.get('output_dshield', 'userid')
-        self.batch_size = int(cfg.get('output_dshield', 'batch_size'))
+    def __init__(self):
+        self.auth_key = CONFIG.get('output_dshield', 'auth_key')
+        self.userid = CONFIG.get('output_dshield', 'userid')
+        self.batch_size = CONFIG.getint('output_dshield', 'batch_size')
         try:
-            self.debug = cfg.getboolean('output_dshield', 'debug')
+            self.debug = CONFIG.getboolean('output_dshield', 'debug')
         except:
             self.debug = False
 
-        cowrie.core.output.Output.__init__(self, cfg)
+        cowrie.core.output.Output.__init__(self)
 
 
     def start(self):
-        self.batch = [] # This is used to store login attempts in batches
+        self.batch = []  # This is used to store login attempts in batches
 
 
     def stop(self):
@@ -44,12 +47,12 @@ class Output(cowrie.core.output.Output):
         if entry["eventid"] == 'cowrie.login.success' or entry["eventid"] == 'cowrie.login.failed':
             date = dateutil.parser.parse(entry["timestamp"])
             self.batch.append({
-                'date' : date.date().__str__(),
-                'time' : date.time().strftime("%H:%M:%S"),
-                'timezone' : time.strftime("%z"),
-                'source_ip' : entry['src_ip'],
-                'user' : entry['username'],
-                'password' : entry['password'],
+                'date': date.date().__str__(),
+                'time': date.time().strftime("%H:%M:%S"),
+                'timezone': time.strftime("%z"),
+                'source_ip': entry['src_ip'],
+                'user': entry['username'],
+                'password': entry['password'],
             })
 
             if len(self.batch) >= self.batch_size:
@@ -77,27 +80,39 @@ class Output(cowrie.core.output.Output):
 
         log_output = ''
         for attempt in self.batch:
-            log_output += '{0}\t{1}\t{2}\t{3}\t{4}\t{5}\n'.format(attempt['date'],
-                attempt['time'], attempt['timezone'], attempt['source_ip'],
-                attempt['user'], attempt['password'])
+            log_output += '{0}\t{1}\t{2}\t{3}\t{4}\t{5}\n'.format(
+                attempt['date'],
+                attempt['time'],
+                attempt['timezone'],
+                attempt['source_ip'],
+                attempt['user'],
+                attempt['password']
+            )
 
         nonce = base64.b64decode(_nonceb64)
-        digest = base64.b64encode(hmac.new('{0}{1}'.format(nonce, self.userid),
-            base64.b64decode(self.auth_key), hashlib.sha256).digest())
+        digest = base64.b64encode(
+            hmac.new(
+                '{0}{1}'.format(nonce, self.userid),
+                base64.b64decode(self.auth_key),
+                hashlib.sha256).digest()
+        )
         auth_header = 'credentials={0} nonce={1} userid={2}'.format(digest, _nonceb64, self.userid)
-        headers = {'X-ISC-Authorization': auth_header,
-                  'Content-Type':'text/plain'}
-        #log.msg(headers)
+        headers = {
+            'X-ISC-Authorization': auth_header,
+            'Content-Type': 'text/plain'
+        }
 
         if self.debug:
             log.msg('dshield: posting: {}'.format(log_output))
 
-        req = threads.deferToThread(requests.request,
-                                method ='PUT',
-                                url = 'https://secure.dshield.org/api/file/sshlog',
-                                headers = headers,
-                                timeout = 10,
-                                data = log_output)
+        req = threads.deferToThread(
+            requests.request,
+            method='PUT',
+            url='https://secure.dshield.org/api/file/sshlog',
+            headers=headers,
+            timeout=10,
+            data=log_output
+        )
 
 
         def check_response(resp):
@@ -113,7 +128,7 @@ class Output(cowrie.core.output.Output):
                 sha1_match = sha1_regex.search(response)
                 if sha1_match is None:
                     log.err('dshield: ERROR: Could not find sha1checksum in response')
-                    log.err('dshield: ERROR: Response: '+repr(response))
+                    log.err('dshield: ERROR: Response: {0}'.format(repr(response)))
                     failed = True
                 sha1_local = hashlib.sha1()
                 sha1_local.update(log_output)
@@ -141,4 +156,3 @@ class Output(cowrie.core.output.Output):
                 reactor.callFromThread(self.transmission_error, batch)
 
         req.addCallback(check_response)
-

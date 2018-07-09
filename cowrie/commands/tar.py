@@ -1,14 +1,15 @@
 # Copyright (c) 2009 Upi Tamminen <desaster@gmail.com>
 # See the COPYRIGHT file for more information
 
-import random
+from __future__ import division, absolute_import
+
 import tarfile
 import os
 
 from twisted.python import log
 
-from cowrie.core.honeypot import HoneyPotCommand
-from cowrie.core.fs import *
+from cowrie.shell.command import HoneyPotCommand
+from cowrie.shell.fs import A_REALFILE
 
 commands = {}
 
@@ -46,8 +47,7 @@ class command_tar(HoneyPotCommand):
 
         path = self.fs.resolve_path(filename, self.protocol.cwd)
         if not path or not self.protocol.fs.exists(path):
-            self.write('tar: %s: Cannot open: No such file or directory\n' % \
-                filename)
+            self.write('tar: %s: Cannot open: No such file or directory\n' % filename)
             self.write('tar: Error is not recoverable: exiting now\n')
             self.write('tar: Child returned status 2\n')
             self.write('tar: Error exit delayed from previous errors\n')
@@ -71,7 +71,7 @@ class command_tar(HoneyPotCommand):
         for f in t:
             dest = self.fs.resolve_path(f.name.strip('/'), self.protocol.cwd)
             if verbose:
-                self.write(f.name+'\n')
+                self.write('{0}\n'.format(f.name))
             if not extract or not len(dest):
                 continue
             if f.isdir():
@@ -80,7 +80,7 @@ class command_tar(HoneyPotCommand):
                 self.mkfullpath(os.path.dirname(dest), f)
                 self.fs.mkfile(dest, 0, 0, f.size, f.mode, f.mtime)
             else:
-                log.msg( 'tar: skipping [%s]' % f.name )
+                log.msg("tar: skipping [%s]".format(f.name))
 
 commands['/bin/tar'] = command_tar
 

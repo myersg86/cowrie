@@ -2,7 +2,10 @@
 
 # Copyright (c) 2016 Dave Germiquet
 # See LICENSE for details.
-from twisted.conch.insults import insults,helper
+
+from __future__ import division, absolute_import
+
+from twisted.conch.insults import insults
 from twisted.test import proto_helpers
 
 
@@ -147,4 +150,3 @@ class FakeTransport(proto_helpers.StringTransport):
     def _emptyLine(self, width):
         return [(self.void, self._currentFormattingState())
                 for i in range(width)]
-

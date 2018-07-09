@@ -6,49 +6,19 @@
 Filesystem related commands
 """
 
+from __future__ import division, absolute_import
+
+import re
 import getopt
 import copy
-from os import path
-from cowrie.core.honeypot import HoneyPotCommand
-from cowrie.core.fs import *
+import os.path
+
+from twisted.python import log
+
+from cowrie.shell.command import HoneyPotCommand
+from cowrie.shell.fs import *
 
 commands = {}
-
-class command_cat(HoneyPotCommand):
-    """
-    cat command
-    """
-    def start(self):
-        if not self.args or self.args[0] == '>':
-            return
-        if self.input_data:
-            self.write(self.input_data)
-        else:
-            for arg in self.args:
-                pname = self.fs.resolve_path(arg, self.protocol.cwd)
-                if self.fs.isdir(pname):
-                    self.errorWrite('cat: {}: Is a directory\n'.format(arg))
-                    continue
-                try:
-                    self.write(self.fs.file_contents(pname))
-                except:
-                    self.errorWrite('cat: {}: No such file or directory\n'.format(arg))
-        self.exit()
-
-
-    def lineReceived(self, line):
-        log.msg(eventid='cowrie.session.input',
-                realm='cat',
-                input=line,
-                format='INPUT (%(realm)s): %(input)s')
-
-
-    def handle_CTRL_D(self):
-        self.exit()
-
-
-commands['/bin/cat'] = command_cat
-
 
 class command_grep(HoneyPotCommand):
     """
@@ -64,8 +34,8 @@ class command_grep(HoneyPotCommand):
 
 
     def grep_application(self, contents, match):
-        match = path.basename(match)
-        match = match.replace("\"","")
+        match = os.path.basename(match)
+        match = match.replace("\"", "")
         contentsplit = contents.split('\n')
         matches = re.compile(".*" + match + ".*")
         for line in contentsplit:
@@ -74,10 +44,10 @@ class command_grep(HoneyPotCommand):
 
 
     def help(self):
-        self.errorWrite( 'usage: grep [-abcDEFGHhIiJLlmnOoPqRSsUVvwxZ] [-A num] [-B num] [-C[num]]\n')
-        self.errorWrite( '\t[-e pattern] [-f file] [--binary-files=value] [--color=when]\n')
-        self.errorWrite( '\t[--context[=num]] [--directories=action] [--label] [--line-buffered]\n')
-        self.errorWrite( '\t[--null] [pattern] [file ...]\n')
+        self.write('usage: grep [-abcDEFGHhIiJLlmnOoPqRSsUVvwxZ] [-A num] [-B num] [-C[num]]\n')
+        self.write('\t[-e pattern] [-f file] [--binary-files=value] [--color=when]\n')
+        self.write('\t[--context[=num]] [--directories=action] [--label] [--line-buffered]\n')
+        self.write('\t[--null] [pattern] [file ...]\n')
 
 
     def start(self):
@@ -124,9 +94,8 @@ class command_grep(HoneyPotCommand):
 
 
 commands['/bin/grep'] = command_grep
-commands['/usr/bin/grep'] = command_grep
-commands['/usr/bin/egrep'] = command_grep
-commands['/usr/bin/fgrep'] = command_grep
+commands['/bin/egrep'] = command_grep
+commands['/bin/fgrep'] = command_grep
 
 
 class command_tail(HoneyPotCommand):
@@ -135,6 +104,7 @@ class command_tail(HoneyPotCommand):
     """
 
     def tail_get_contents(self, filename):
+
         try:
             contents = self.fs.file_contents(filename)
             self.tail_application(contents)
@@ -143,14 +113,15 @@ class command_tail(HoneyPotCommand):
 
 
     def tail_application(self, contents):
-        contentsplit = contents.split('\n')
+        contentsplit = contents.split(b'\n')
         lines = int(len(contentsplit))
         if lines < self.n:
             self.n = lines - 1
         i = 0
         for j in range((lines - self.n - 1), lines):
+            self.write(contentsplit[j].decode('utf8'))
             if i < self.n:
-                self.write(contentsplit[j] + '\n')
+                self.write('\n')
             i += 1
 
 
@@ -204,7 +175,7 @@ class command_head(HoneyPotCommand):
 
     def head_application(self, contents):
         i = 0
-        contentsplit = str(contents).split("\n")
+        contentsplit = contents.split("\n")
         for line in contentsplit:
             if i < self.n:
                 self.write(line + '\n')
@@ -222,7 +193,7 @@ class command_head(HoneyPotCommand):
     def start(self):
         self.n = 10
         if not self.args or self.args[0] == '>':
-            pass
+            return
         else:
             try:
                 optlist, args = getopt.getopt(self.args, 'n:')
@@ -367,8 +338,7 @@ class command_cp(HoneyPotCommand):
             isdir = False
             parent = os.path.dirname(resolv(dest))
             if not self.fs.exists(parent):
-                self.errorWrite("cp: cannot create regular file " + \
-                           "`{}': No such file or directory\n".format(dest))
+                self.errorWrite("cp: cannot create regular file " + "`{}': No such file or directory\n".format(dest))
                 return
 
         for src in sources:
@@ -423,8 +393,7 @@ class command_mv(HoneyPotCommand):
             self.errorWrite("mv: target `{}' is not a directory\n".format(dest))
             return
 
-        if dest[-1] == '/' and not self.fs.exists(resolv(dest)) and \
-                        len(sources) != 1:
+        if dest[-1] == '/' and not self.fs.exists(resolv(dest)) and len(sources) != 1:
             self.errorWrite(
                 "mv: cannot create regular file `{}': Is a directory\n".format(dest))
             return
@@ -435,8 +404,7 @@ class command_mv(HoneyPotCommand):
             isdir = False
             parent = os.path.dirname(resolv(dest))
             if not self.fs.exists(parent):
-                self.errorWrite("mv: cannot create regular file " + \
-                           "`{}': No such file or directory\n".format(dest))
+                self.errorWrite("mv: cannot create regular file " + "`{}': No such file or directory\n".format(dest))
                 return
 
         for src in sources:

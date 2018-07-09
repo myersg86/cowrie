@@ -3,6 +3,8 @@
 MySQL output connector. Writes audit logs to MySQL database
 """
 
+from __future__ import division, absolute_import
+
 import MySQLdb
 
 from twisted.internet import defer
@@ -10,6 +12,9 @@ from twisted.enterprise import adbapi
 from twisted.python import log
 
 import cowrie.core.output
+
+from cowrie.core.config import CONFIG
+
 
 class ReconnectingConnectionPool(adbapi.ConnectionPool):
     """
@@ -29,7 +34,7 @@ class ReconnectingConnectionPool(adbapi.ConnectionPool):
                 self, interaction, *args, **kw)
         except MySQLdb.OperationalError as e:
             if e[0] not in (2003, 2006, 2013):
-                raise log.msg("RCP: got error %s, retrying operation" %(e,))
+                raise log.msg("RCP: got error {0}, retrying operation".format(e))
             conn = self.connections.get(self.threadID())
             self.disconnect(conn)
             # Try the interaction again
@@ -42,38 +47,40 @@ class Output(cowrie.core.output.Output):
     """
     docstring here
     """
-    debug = False
     db = None
 
-    def __init__(self, cfg):
-        self.cfg = cfg
-        cowrie.core.output.Output.__init__(self, cfg)
+    def __init__(self):
+        try:
+            self.debug = CONFIG.getboolean('output_mysql', 'debug')
+        except:
+            self.debug = False
+
+        cowrie.core.output.Output.__init__(self)
 
 
     def start(self):
         """
         docstring here
         """
-        if self.cfg.has_option('output_mysql', 'debug'):
-            self.debug = self.cfg.getboolean('output_mysql', 'debug')
 
-        if self.cfg.has_option('output_mysql', 'port'):
-            port = int(self.cfg.get('output_mysql', 'port'))
-        else:
-            port = 3306
         try:
-            self.db = ReconnectingConnectionPool('MySQLdb',
-                host = self.cfg.get('output_mysql', 'host'),
-                db = self.cfg.get('output_mysql', 'database'),
-                user = self.cfg.get('output_mysql', 'username'),
-                passwd = self.cfg.get('output_mysql', 'password'),
-                port = port,
-                cp_min = 1,
-                cp_max = 1)
+            port = CONFIG.getint('output_mysql', 'port')
+        except:
+            port = 3306
+
+        try:
+            self.db = ReconnectingConnectionPool(
+                'MySQLdb',
+                host=CONFIG.get('output_mysql', 'host'),
+                db=CONFIG.get('output_mysql', 'database'),
+                user=CONFIG.get('output_mysql', 'username'),
+                passwd=CONFIG.get('output_mysql', 'password', raw=True),
+                port=port,
+                cp_min=1,
+                cp_max=1
+            )
         except MySQLdb.Error as e:
             log.msg("output_mysql: Error %d: %s" % (e.args[0], e.args[1]))
-
-        self.db.start()
 
 
     def stop(self):
@@ -118,51 +125,68 @@ class Output(cowrie.core.output.Output):
                 sensorid = int(r[0][0])
             self.simpleQuery(
                 "INSERT INTO `sessions` (`id`, `starttime`, `sensor`, `ip`)"
-                +  " VALUES (%s, STR_TO_DATE(%s, %s), %s, %s)",
-                (entry["session"], entry["timestamp"], '%Y-%m-%dT%H:%i:%s.%fZ',
-                    sensorid, entry["src_ip"]))
+                + " VALUES (%s, FROM_UNIXTIME(%s), %s, %s)",
+                (entry["session"], entry["time"], sensorid, entry["src_ip"]))
 
         elif entry["eventid"] == 'cowrie.login.success':
-            self.simpleQuery('INSERT INTO `auth` (`session`, `success`' + \
-                ', `username`, `password`, `timestamp`)' + \
-                ' VALUES (%s, %s, %s, %s, STR_TO_DATE(%s, %s))',
-                (entry["session"], 1, entry['username'], entry['password'],
-                entry["timestamp"], '%Y-%m-%dT%H:%i:%s.%fZ'))
+            self.simpleQuery('INSERT INTO `auth` (`session`, `success`, ' + \
+                             '`username`, `password`, `timestamp`)' + \
+                             ' VALUES (%s, %s, %s, %s, FROM_UNIXTIME(%s))',
+                             (entry["session"], 1, entry['username'],
+                              entry['password'], entry["time"]))
 
         elif entry["eventid"] == 'cowrie.login.failed':
             self.simpleQuery('INSERT INTO `auth` (`session`, `success`' + \
-                ', `username`, `password`, `timestamp`)' + \
-                ' VALUES (%s, %s, %s, %s, STR_TO_DATE(%s, %s))',
-                (entry["session"], 0, entry['username'], entry['password'],
-                entry["timestamp"], '%Y-%m-%dT%H:%i:%s.%fZ'))
+                             ', `username`, `password`, `timestamp`)' + \
+                             ' VALUES (%s, %s, %s, %s, FROM_UNIXTIME(%s))',
+                             (entry["session"], 0, entry['username'],
+                              entry['password'], entry["time"]))
 
-        elif entry["eventid"] == 'cowrie.command.success':
+        elif entry["eventid"] == 'cowrie.session.params':
+            self.simpleQuery('INSERT INTO `params` (`session`, `arch`)' + \
+                             ' VALUES (%s, %s)',
+                             (entry["session"], entry["arch"]))
+
+        elif entry["eventid"] == 'cowrie.command.input':
             self.simpleQuery('INSERT INTO `input`' + \
-                ' (`session`, `timestamp`, `success`, `input`)' + \
-                ' VALUES (%s, STR_TO_DATE(%s, %s), %s , %s)',
-                (entry["session"], entry["timestamp"], '%Y-%m-%dT%H:%i:%s.%fZ',
-                1, entry["input"]))
+                             ' (`session`, `timestamp`, `success`, `input`)' + \
+                             ' VALUES (%s, FROM_UNIXTIME(%s), %s , %s)',
+                             (entry["session"], entry["time"], 1, entry["input"]))
 
         elif entry["eventid"] == 'cowrie.command.failed':
             self.simpleQuery('INSERT INTO `input`' + \
-                ' (`session`, `timestamp`, `success`, `input`)' + \
-                ' VALUES (%s, STR_TO_DATE(%s, %s), %s , %s)',
-                (entry["session"], entry["timestamp"], '%Y-%m-%dT%H:%i:%s.%fZ',
-                0, entry["input"]))
+                             ' (`session`, `timestamp`, `success`, `input`)' + \
+                             ' VALUES (%s, FROM_UNIXTIME(%s), %s , %s)',
+                             (entry["session"], entry["time"], 0, entry["input"]))
 
         elif entry["eventid"] == 'cowrie.session.file_download':
             self.simpleQuery('INSERT INTO `downloads`' + \
-                ' (`session`, `timestamp`, `url`, `outfile`, `shasum`)' + \
-                ' VALUES (%s, STR_TO_DATE(%s, %s), %s, %s, %s)',
-                (entry["session"], entry["timestamp"], '%Y-%m-%dT%H:%i:%s.%fZ',
-                entry['url'], entry['outfile'], entry['shasum']))
+                             ' (`session`, `timestamp`, `url`, `outfile`, `shasum`)' + \
+                             ' VALUES (%s, FROM_UNIXTIME(%s), %s, %s, %s)',
+                             (entry["session"], entry["time"],
+                              entry['url'], entry['outfile'],
+                              entry['shasum']))
 
-        elif entry["eventid"] == 'cowrie.session.file_download':
+        elif entry["eventid"] == 'cowrie.session.file_download.failed':
+            self.simpleQuery('INSERT INTO `downloads`' + \
+                             ' (`session`, `timestamp`, `url`, `outfile`, `shasum`)' + \
+                             ' VALUES (%s, FROM_UNIXTIME(%s), %s, %s, %s)',
+                             (entry["session"], entry["time"],
+                              entry['url'], 'NULL', 'NULL'))
+
+        elif entry["eventid"] == 'cowrie.session.file_upload':
+            self.simpleQuery('INSERT INTO `downloads`' + \
+                             ' (`session`, `timestamp`, `url`, `outfile`, `shasum`)' + \
+                             ' VALUES (%s, FROM_UNIXTIME(%s), %s, %s, %s)',
+                             (entry["session"], entry["time"], '',
+                              entry['outfile'], entry['shasum']))
+
+        elif entry["eventid"] == 'cowrie.session.input':
             self.simpleQuery('INSERT INTO `input`' + \
-                ' (`session`, `timestamp`, `realm`, `input`)' + \
-                ' VALUES (%s, STR_TO_DATE(%s, %s), %s , %s)',
-                (entry["session"], entry["timestamp"], '%Y-%m-%dT%H:%i:%s.%fZ',
-                entry["realm"], entry["input"]))
+                             ' (`session`, `timestamp`, `realm`, `input`)' + \
+                             ' VALUES (%s, FROM_UNIXTIME(%s), %s , %s)',
+                             (entry["session"], entry["time"],
+                              entry["realm"], entry["input"]))
 
         elif entry["eventid"] == 'cowrie.client.version':
             r = yield self.db.runQuery(
@@ -188,9 +212,8 @@ class Output(cowrie.core.output.Output):
 
         elif entry["eventid"] == 'cowrie.session.closed':
             self.simpleQuery(
-                'UPDATE `sessions` SET `endtime` = STR_TO_DATE(%s, %s)' + \
-                ' WHERE `id` = %s', (entry["timestamp"],
-                    '%Y-%m-%dT%H:%i:%s.%fZ', entry["session"]))
+                'UPDATE `sessions` SET `endtime` = FROM_UNIXTIME(%s)' + \
+                ' WHERE `id` = %s', (entry["time"], entry["session"]))
 
         elif entry["eventid"] == 'cowrie.log.closed':
             self.simpleQuery(
@@ -201,4 +224,3 @@ class Output(cowrie.core.output.Output):
             self.simpleQuery(
                 'INSERT INTO `keyfingerprints` (`session`, `username`, `fingerprint`) VALUES (%s, %s, %s)',
                 (entry["session"], entry["username"], entry["fingerprint"]))
-

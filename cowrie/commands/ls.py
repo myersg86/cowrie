@@ -1,14 +1,15 @@
 # Copyright (c) 2009 Upi Tamminen <desaster@gmail.com>
 # See the COPYRIGHT file for more information
 
+from __future__ import division, absolute_import
+
 import stat
 import getopt
 import time
 
-from cowrie.core.honeypot import HoneyPotCommand
-from cowrie.core.fs import *
-
-from cowrie.core.pwd import Passwd, Group
+from cowrie.shell.command import HoneyPotCommand
+from cowrie.shell.fs import *
+from cowrie.shell.pwd import Passwd, Group
 
 commands = {}
 
@@ -20,7 +21,7 @@ class command_ls(HoneyPotCommand):
         """
         """
         try:
-            return Passwd(self.protocol.cfg).getpwuid(uid)["pw_name"]
+            return Passwd().getpwuid(uid)["pw_name"]
         except:
             return str(uid)
 
@@ -29,7 +30,7 @@ class command_ls(HoneyPotCommand):
         """
         """
         try:
-            return Group(self.protocol.cfg).getgrgid(gid)["gr_name"]
+            return Group().getgrgid(gid)["gr_name"]
         except:
             return str(gid)
 
@@ -147,23 +148,38 @@ class command_ls(HoneyPotCommand):
                 continue
 
             perms = ['-'] * 10
-            if file[A_MODE] & stat.S_IRUSR: perms[1] = 'r'
-            if file[A_MODE] & stat.S_IWUSR: perms[2] = 'w'
-            if file[A_MODE] & stat.S_IXUSR: perms[3] = 'x'
-            if file[A_MODE] & stat.S_ISUID: perms[3] = 'S'
-            if file[A_MODE] & stat.S_IXUSR and file[A_MODE] & stat.S_ISUID: perms[3] = 's'
+            if file[A_MODE] & stat.S_IRUSR:
+                perms[1] = 'r'
+            if file[A_MODE] & stat.S_IWUSR:
+                perms[2] = 'w'
+            if file[A_MODE] & stat.S_IXUSR:
+                perms[3] = 'x'
+            if file[A_MODE] & stat.S_ISUID:
+                perms[3] = 'S'
+            if file[A_MODE] & stat.S_IXUSR and file[A_MODE] & stat.S_ISUID:
+                perms[3] = 's'
 
-            if file[A_MODE] & stat.S_IRGRP: perms[4] = 'r'
-            if file[A_MODE] & stat.S_IWGRP: perms[5] = 'w'
-            if file[A_MODE] & stat.S_IXGRP: perms[6] = 'x'
-            if file[A_MODE] & stat.S_ISGID: perms[6] = 'S'
-            if file[A_MODE] & stat.S_IXGRP and file[A_MODE] & stat.S_ISGID: perms[6] = 's'
+            if file[A_MODE] & stat.S_IRGRP:
+                perms[4] = 'r'
+            if file[A_MODE] & stat.S_IWGRP:
+                perms[5] = 'w'
+            if file[A_MODE] & stat.S_IXGRP:
+                perms[6] = 'x'
+            if file[A_MODE] & stat.S_ISGID:
+                perms[6] = 'S'
+            if file[A_MODE] & stat.S_IXGRP and file[A_MODE] & stat.S_ISGID:
+                perms[6] = 's'
 
-            if file[A_MODE] & stat.S_IROTH: perms[7] = 'r'
-            if file[A_MODE] & stat.S_IWOTH: perms[8] = 'w'
-            if file[A_MODE] & stat.S_IXOTH: perms[9] = 'x'
-            if file[A_MODE] & stat.S_ISVTX: perms[9] = 'T'
-            if file[A_MODE] & stat.S_IXOTH and file[A_MODE] & stat.S_ISVTX: perms[9] = 't'
+            if file[A_MODE] & stat.S_IROTH:
+                perms[7] = 'r'
+            if file[A_MODE] & stat.S_IWOTH:
+                perms[8] = 'w'
+            if file[A_MODE] & stat.S_IXOTH:
+                perms[9] = 'x'
+            if file[A_MODE] & stat.S_ISVTX:
+                perms[9] = 'T'
+            if file[A_MODE] & stat.S_IXOTH and file[A_MODE] & stat.S_ISVTX:
+                perms[9] = 't'
 
             linktarget = ''
 
@@ -178,14 +194,14 @@ class command_ls(HoneyPotCommand):
 
             l = '%s 1 %s %s %s %s %s%s' % \
                 (perms,
-                self.uid2name(file[A_UID]),
-                self.gid2name(file[A_GID]),
-                str(file[A_SIZE]).rjust(len(str(largest))),
-                time.strftime('%Y-%m-%d %H:%M', ctime),
-                file[A_NAME],
-                linktarget)
+                 self.uid2name(file[A_UID]),
+                 self.gid2name(file[A_GID]),
+                 str(file[A_SIZE]).rjust(len(str(largest))),
+                 time.strftime('%Y-%m-%d %H:%M', ctime),
+                 file[A_NAME],
+                 linktarget)
 
-            self.write(l+'\n')
+            self.write('{0}\n'.format(l))
+
 commands['/bin/ls'] = command_ls
 commands['/bin/dir'] = command_ls
-

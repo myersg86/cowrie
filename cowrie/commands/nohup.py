@@ -2,11 +2,9 @@
 # Copyright (c) 2014 Peter Reuterås <peter@reuteras.com>
 # See the COPYRIGHT file for more information
 
-import os
-import getopt
+from __future__ import division, absolute_import
 
-from cowrie.core.honeypot import HoneyPotCommand
-from cowrie.core.fs import *
+from cowrie.shell.command import HoneyPotCommand
 
 commands = {}
 
@@ -23,5 +21,3 @@ class command_nohup(HoneyPotCommand):
         self.write("nohup: ignoring input and appending output to 'nohup.out'\n")
 
 commands['/usr/bin/nohup'] = command_nohup
-
-# vim: set sw=4 et:

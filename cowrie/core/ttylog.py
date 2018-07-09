@@ -7,6 +7,8 @@
 Should be compatible with user mode linux
 """
 
+from __future__ import division, absolute_import
+
 import struct
 
 OP_OPEN, OP_CLOSE, OP_WRITE, OP_EXEC = 1, 2, 3, 4
@@ -53,4 +55,3 @@ def ttylog_close(logfile, stamp):
     with open(logfile, 'ab') as f:
         sec, usec = int(stamp), int(1000000 * (stamp - int(stamp)))
         f.write(struct.pack('<iLiiLL', 2, 0, 0, 0, sec, usec))
-

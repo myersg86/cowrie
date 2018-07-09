@@ -2,23 +2,31 @@
 # See the COPYRIGHT file for more information
 
 """
-This module contains ...
+This module contains authentication code
 """
 
+from __future__ import division, absolute_import
+
+import re
 import json
 from os import path
 from random import randint
+from collections import OrderedDict
 
 from twisted.python import log
+
+from cowrie.core.config import CONFIG
 
 class UserDB(object):
     """
     By Walter de Jong <walter@sara.nl>
     """
 
-    def __init__(self, cfg):
-        self.userdb = []
-        self.userdb_file = '%s/userdb.txt' % cfg.get('honeypot', 'data_path')
+    def __init__(self):
+        """
+        """
+        self.userdb = OrderedDict()
+        self.userdb_file = '{}/userdb.txt'.format(CONFIG.get('honeypot', 'data_path'))
         self.load()
 
 
@@ -27,7 +35,7 @@ class UserDB(object):
         load the user db
         """
 
-        with open(self.userdb_file, 'r') as f:
+        with open(self.userdb_file, 'rb') as f:
             while True:
                 rawline = f.readline()
                 if not rawline:
@@ -37,57 +45,68 @@ class UserDB(object):
                 if not line:
                     continue
 
-                if line.startswith('#'):
+                if line.startswith(b'#'):
                     continue
 
-                (login, uid, passwd) = line.split(':', 2)
-
-                self.userdb.append((login, passwd))
-
-
-    def save(self):
-        """
-        save the user db
-        """
-
-        # Note: this is subject to races between cowrie instances, but hey ...
-        with open(self.userdb_file, 'w') as f:
-            for (login, passwd) in self.userdb:
-                f.write('%s:x:%s\n' % (login, passwd))
+                login, passwd = re.split(br':\w+:', line, 1)
+                self.adduser(login, passwd)
 
 
     def checklogin(self, thelogin, thepasswd, src_ip='0.0.0.0'):
         """
-        check entered username/password against database
-        note that it allows multiple passwords for a single username
-        it also knows wildcard '*' for any password
-        prepend password with ! to explicitly deny it. Denials must come before wildcards
         """
-        for (login, passwd) in self.userdb:
-            # Explicitly fail on !password
-            if login == thelogin and passwd == '!' + thepasswd:
-                return False
-            if login == thelogin and passwd in (thepasswd, '*'):
-                return True
+        for credentials, policy in self.userdb.items():
+            login, passwd = credentials
+
+            if self.match_rule(login, thelogin):
+                if self.match_rule(passwd, thepasswd):
+                    return policy
+
         return False
 
 
-    def user_password_exists(self, thelogin, thepasswd):
+    def match_rule(self, rule, input):
         """
         """
-        for (login, passwd) in self.userdb:
-            if login == thelogin and passwd == thepasswd:
-                return True
-        return False
+        if type(rule) is bytes:
+            return rule in [b'*', input]
+        else:
+            return bool(rule.search(input))
+
+
+    def re_or_str(self, rule):
+        """
+        Convert a /.../ type rule to a regex, otherwise return the string as-is
+
+        @param login: rule
+        @type login: bytes
+        """
+        res = re.match(br'/(.+)/(i)?$', rule)
+        if res:
+            return re.compile(res.group(1), re.IGNORECASE if res.group(2) else 0)
+
+        return rule
 
 
     def adduser(self, login, passwd):
         """
+        All arguments are bytes
+
+        @param login: user id
+        @type login: bytes
+        @param passwd: password
+        @type passwd: bytes
         """
-        if self.user_password_exists(login, passwd):
-            return
-        self.userdb.append((login, passwd))
-        self.save()
+        login = self.re_or_str(login)
+
+        if passwd[0] == b'!':
+            policy = False
+            passwd = passwd[1:]
+        else:
+            policy = True
+
+        passwd = self.re_or_str(passwd)
+        self.userdb[(login, passwd)] = policy
 
 
 
@@ -97,13 +116,13 @@ class AuthRandom(object):
     Users will be authenticated after a random number of attempts.
     """
 
-    def __init__(self, cfg):
+    def __init__(self):
         # Default values
         self.mintry, self.maxtry, self.maxcache = 2, 5, 10
 
         # Are there auth_class parameters?
-        if cfg.has_option('honeypot', 'auth_class_parameters'):
-            parameters = cfg.get('honeypot', 'auth_class_parameters')
+        if CONFIG.has_option('honeypot', 'auth_class_parameters'):
+            parameters = CONFIG.get('honeypot', 'auth_class_parameters')
             parlist = parameters.split(',')
             if len(parlist) == 3:
                 self.mintry = int(parlist[0])
@@ -112,9 +131,9 @@ class AuthRandom(object):
 
         if self.maxtry < self.mintry:
             self.maxtry = self.mintry + 1
-            log.msg('maxtry < mintry, adjusting maxtry to: %d' % (self.maxtry,))
+            log.msg("maxtry < mintry, adjusting maxtry to: {}".format(self.maxtry))
         self.uservar = {}
-        self.uservar_file = '%s/uservar.json' % cfg.get('honeypot', 'data_path')
+        self.uservar_file = '{}/auth_random.json'.format(CONFIG.get('honeypot', 'state_path'))
         self.loadvars()
 
 
@@ -154,7 +173,7 @@ class AuthRandom(object):
         auth = False
         userpass = thelogin + ':' + thepasswd
 
-        if not 'cache' in self.uservar:
+        if 'cache' not in self.uservar:
             self.uservar['cache'] = []
         cache = self.uservar['cache']
 
@@ -164,7 +183,7 @@ class AuthRandom(object):
             ipinfo = self.uservar[src_ip]
             ipinfo['try'] = 0
             if userpass in cache:
-                log.msg('first time for %s, found cached: %s' % (src_ip, userpass))
+                log.msg("first time for {}, found cached: {}".format(src_ip, userpass))
                 ipinfo['max'] = 1
                 ipinfo['user'] = thelogin
                 ipinfo['pw'] = thepasswd
@@ -173,16 +192,16 @@ class AuthRandom(object):
                 return auth
             else:
                 ipinfo['max'] = randint(self.mintry, self.maxtry)
-                log.msg('first time for %s, need: %d' % (src_ip, ipinfo['max']))
+                log.msg("first time for {}, need: {}".format(src_ip, ipinfo['max']))
 
         ipinfo = self.uservar[src_ip]
 
         # Fill in missing variables
-        if not 'max' in ipinfo:
+        if 'max' not in ipinfo:
             ipinfo['max'] = randint(self.mintry, self.maxtry)
-        if not 'try' in ipinfo:
+        if 'try' not in ipinfo:
             ipinfo['try'] = 0
-        if not 'tried' in ipinfo:
+        if 'tried' not in ipinfo:
             ipinfo['tried'] = []
 
         # Don't count repeated username/password combinations
@@ -194,7 +213,7 @@ class AuthRandom(object):
         ipinfo['try'] += 1
         attempts = ipinfo['try']
         need = ipinfo['max']
-        log.msg('login attempt: %d' % (attempts,))
+        log.msg("login attempt: {}".format(attempts))
 
         # Check if enough login attempts are tried
         if attempts < need:
@@ -208,14 +227,13 @@ class AuthRandom(object):
             auth = True
         # Returning after successful login
         elif attempts > need:
-            if not 'user' in ipinfo or not 'pw' in ipinfo:
+            if 'user' not in ipinfo or 'pw' not in ipinfo:
                 log.msg('return, but username or password not set!!!')
                 ipinfo['tried'].append(userpass)
                 ipinfo['try'] = 1
             else:
-                log.msg('login return, expect: [%s/%s]' % (ipinfo['user'], ipinfo['pw']))
+                log.msg("login return, expect: [{}/{}]".format(ipinfo['user'], ipinfo['pw']))
                 if thelogin == ipinfo['user'] and thepasswd == ipinfo['pw']:
                     auth = True
         self.savevars()
         return auth
-

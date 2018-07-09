@@ -1,19 +1,24 @@
 # Copyright (c) 2013 Bas Stottelaar <basstottelaar [AT] gmail [DOT] com>
 
+from __future__ import division, absolute_import
+
 import time
 import re
 import getopt
 import random
+import os
 
 from twisted.internet import reactor
 
-from cowrie.core.honeypot import HoneyPotCommand
+from cowrie.shell.command import HoneyPotCommand
+
+from cowrie.core.config import CONFIG
 
 commands = {}
 
 class command_gcc(HoneyPotCommand):
     # Name of program. Under OSX, you might consider i686-apple-darwin11-llvm-gcc-X.X
-    APP_NAME    = "gcc"
+    APP_NAME = "gcc"
 
     # GCC verson, used in help, version and the commandline name gcc-X.X
     APP_VERSION = (4, 7, 2)
@@ -131,8 +136,8 @@ class command_gcc(HoneyPotCommand):
 
     def no_files(self):
         """ Notify user there are no input files, and exit """
-        self.write( """gcc: fatal error: no input files
-compilation terminated.\n""" )
+        self.write("""gcc: fatal error: no input files
+compilation terminated.\n""")
         self.exit()
 
 
@@ -140,16 +145,16 @@ compilation terminated.\n""" )
         """ Print long or short version, and exit """
 
         # Generate version number
-        version = '.'.join([ str(v) for v in command_gcc.APP_VERSION[:3] ])
-        version_short = '.'.join([ str(v) for v in command_gcc.APP_VERSION[:2] ])
+        version = '.'.join([str(v) for v in command_gcc.APP_VERSION[:3]])
+        version_short = '.'.join([str(v) for v in command_gcc.APP_VERSION[:2]])
 
         if short:
-            data = ( """%s (Debian %s-8) %s
+            data = ("""%s (Debian %s-8) %s
 Copyright (C) 2010 Free Software Foundation, Inc.
 This is free software; see the source for copying conditions.  There is NO
-warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.""", (command_gcc.APP_NAME, version, version) )
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.""", (command_gcc.APP_NAME, version, version))
         else:
-            data = ( """Using built-in specs.
+            data = ("""Using built-in specs.
 COLLECT_GCC=gcc
 COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-linux-gnu/4.7/lto-wrapper
 Target: x86_64-linux-gnu
@@ -158,16 +163,18 @@ Thread model: posix
 gcc version %s (Debian %s-5)""" % (version, version_short, version_short, version_short, version, version))
 
         # Write
-        self.write(data+'\n')
+        self.write('{0}\n'.format(data))
         self.exit()
 
     def generate_file(self, outfile):
         data = ""
         # TODO: make sure it is written to temp file, not downloads
-        safeoutfile = '%s/%s_%s' % \
-            (self.protocol.cfg.get('honeypot', 'download_path'),
-            time.strftime('%Y%m%d%H%M%S'),
-            re.sub('[^A-Za-z0-9]', '_', outfile))
+        tmp_fname = '%s_%s_%s_%s' % \
+                    (time.strftime('%Y%m%d%H%M%S'),
+                     self.protocol.getProtoTransport().transportId,
+                     self.protocol.terminal.transport.session.id,
+                     re.sub('[^A-Za-z0-9]', '_', outfile))
+        safeoutfile = os.path.join(CONFIG.get('honeypot', 'download_path'), tmp_fname)
 
         # Data contains random garbage from an actual file, so when
         # catting the file, you'll see some 'real' compiled data
@@ -186,6 +193,7 @@ gcc version %s (Debian %s-5)""" % (version, version_short, version_short, versio
         # Create file for the protocol
         self.fs.mkfile(outfile, 0, 0, len(data), 33188)
         self.fs.update_realfile(self.fs.getfile(outfile), safeoutfile)
+        self.fs.chown(outfile, self.protocol.user.uid, self.protocol.user.gid)
 
         # Segfault command
         class segfault_command(HoneyPotCommand):
@@ -206,9 +214,9 @@ gcc version %s (Debian %s-5)""" % (version, version_short, version_short, versio
     def help(self):
         """ Print help info, and exit """
 
-        version = '.'.join([ str(v) for v in command_gcc.APP_VERSION[:2] ])
+        version = '.'.join([str(v) for v in command_gcc.APP_VERSION[:2]])
 
-        self.write( """Usage: gcc [options] file...
+        self.write("""Usage: gcc [options] file...
 Options:
   -pass-exit-codes         Exit with highest error code from a phase
   --help                   Display this information
@@ -273,4 +281,4 @@ For bug reporting instructions, please see:
 
 # Definitions
 commands['/usr/bin/gcc'] = command_gcc
-commands['/usr/bin/gcc-%s' % ('.'.join([ str(v) for v in command_gcc.APP_VERSION[:2] ]))] = command_gcc
+commands['/usr/bin/gcc-%s' % ('.'.join([str(v) for v in command_gcc.APP_VERSION[:2]]))] = command_gcc

@@ -5,7 +5,10 @@
 This module contains ...
 """
 
+from __future__ import division, absolute_import
+
 import time
+from configparser import NoOptionError
 
 from twisted.conch.ssh import factory
 from twisted.conch.ssh import keys
@@ -15,7 +18,9 @@ from twisted.conch.openssh_compat import primes
 from cowrie.ssh import connection
 from cowrie.ssh import userauth
 from cowrie.ssh import transport
-from cowrie.core import keys as cowriekeys
+from cowrie.ssh import keys as cowriekeys
+
+from cowrie.core.config import CONFIG
 
 
 class CowrieSSHFactory(factory.SSHFactory):
@@ -25,24 +30,20 @@ class CowrieSSHFactory(factory.SSHFactory):
     """
 
     services = {
-        'ssh-userauth': userauth.HoneyPotSSHUserAuthServer,
-        'ssh-connection': connection.CowrieSSHConnection,
-        }
+        b'ssh-userauth': userauth.HoneyPotSSHUserAuthServer,
+        b'ssh-connection': connection.CowrieSSHConnection,
+    }
     starttime = None
     privateKeys = None
     publicKeys = None
     primes = None
-    tac = None # gets set later
-
-    def __init__(self, cfg):
-        self.cfg = cfg
-
+    tac = None  # gets set later
 
     def logDispatch(self, *msg, **args):
         """
         Special delivery to the loggers to avoid scope problems
         """
-        args['sessionno'] = 'S'+str(args['sessionno'])
+        args['sessionno'] = 'S{0}'.format(args['sessionno'])
         for dblog in self.tac.dbloggers:
             dblog.logDispatch(*msg, **args)
         for output in self.tac.output_plugins:
@@ -56,14 +57,16 @@ class CowrieSSHFactory(factory.SSHFactory):
         self.starttime = time.time()
 
         # Load/create keys
-        rsaPubKeyString, rsaPrivKeyString = cowriekeys.getRSAKeys(self.cfg)
-        dsaPubKeyString, dsaPrivKeyString = cowriekeys.getDSAKeys(self.cfg)
+        rsaPubKeyString, rsaPrivKeyString = cowriekeys.getRSAKeys()
+        dsaPubKeyString, dsaPrivKeyString = cowriekeys.getDSAKeys()
         self.publicKeys = {
-          'ssh-rsa': keys.Key.fromString(data=rsaPubKeyString),
-          'ssh-dss': keys.Key.fromString(data=dsaPubKeyString)}
+            b'ssh-rsa': keys.Key.fromString(data=rsaPubKeyString),
+            b'ssh-dss': keys.Key.fromString(data=dsaPubKeyString)
+        }
         self.privateKeys = {
-          'ssh-rsa': keys.Key.fromString(data=rsaPrivKeyString),
-          'ssh-dss': keys.Key.fromString(data=dsaPrivKeyString)}
+            b'ssh-rsa': keys.Key.fromString(data=rsaPrivKeyString),
+            b'ssh-dss': keys.Key.fromString(data=dsaPrivKeyString)
+        }
 
         factory.SSHFactory.startFactory(self)
         log.msg("Ready to accept SSH connections")
@@ -91,8 +94,8 @@ class CowrieSSHFactory(factory.SSHFactory):
         t = transport.HoneyPotSSHTransport()
 
         try:
-            t.ourVersionString = self.cfg.get('honeypot', 'ssh_version_string')
-        except:
+            t.ourVersionString = CONFIG.get('ssh', 'version')
+        except NoOptionError:
             t.ourVersionString = "SSH-2.0-OpenSSH_6.0p1 Debian-4+deb7u2"
 
         t.supportedPublicKeys = list(self.privateKeys.keys())
@@ -106,22 +109,29 @@ class CowrieSSHFactory(factory.SSHFactory):
 
         if not self.primes:
             ske = t.supportedKeyExchanges[:]
-            if 'diffie-hellman-group-exchange-sha1' in ske:
-                ske.remove('diffie-hellman-group-exchange-sha1')
+            if b'diffie-hellman-group-exchange-sha1' in ske:
+                ske.remove(b'diffie-hellman-group-exchange-sha1')
                 log.msg("No moduli, no diffie-hellman-group-exchange-sha1")
-            if 'diffie-hellman-group-exchange-sha256' in ske:
-                ske.remove('diffie-hellman-group-exchange-sha256')
+            if b'diffie-hellman-group-exchange-sha256' in ske:
+                ske.remove(b'diffie-hellman-group-exchange-sha256')
                 log.msg("No moduli, no diffie-hellman-group-exchange-sha256")
             t.supportedKeyExchanges = ske
 
         # Reorder supported ciphers to resemble current openssh more
-        t.supportedCiphers = ['aes128-ctr', 'aes192-ctr', 'aes256-ctr',
-            'aes128-cbc', '3des-cbc', 'blowfish-cbc', 'cast128-cbc',
-            'aes192-cbc', 'aes256-cbc']
-        t.supportedPublicKeys = ['ssh-rsa', 'ssh-dss']
-        t.supportedMACs = ['hmac-md5', 'hmac-sha1']
-        t.supportedCompressions = ['zlib@openssh.com', 'zlib', 'none']
+        t.supportedCiphers = [
+            b'aes128-ctr',
+            b'aes192-ctr',
+            b'aes256-ctr',
+            b'aes128-cbc',
+            b'3des-cbc',
+            b'blowfish-cbc',
+            b'cast128-cbc',
+            b'aes192-cbc',
+            b'aes256-cbc'
+        ]
+        t.supportedPublicKeys = [b'ssh-rsa', b'ssh-dss']
+        t.supportedMACs = [b'hmac-md5', b'hmac-sha1']
+        t.supportedCompressions = [b'zlib@openssh.com', b'zlib', b'none']
 
         t.factory = self
         return t
-

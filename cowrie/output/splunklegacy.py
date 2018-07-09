@@ -10,27 +10,30 @@ required then
 
 """
 
-import os
+from __future__ import division, absolute_import
+
 import json
 
 import splunklib.client as client
 
 import cowrie.core.output
+from cowrie.core.config import CONFIG
+
 
 class Output(cowrie.core.output.Output):
     """
     """
 
-    def __init__(self, cfg):
+    def __init__(self):
         """
         Initializing the class
         """
-        self.index = cfg.get('output_splunklegacy', 'index')
-        self.username = cfg.get('output_splunklegacy', 'username')
-        self.password = cfg.get('output_splunklegacy', 'password')
-        self.host = cfg.get('output_splunklegacy', 'host')
-        self.port = cfg.get('output_splunklegacy', 'port')
-        cowrie.core.output.Output.__init__(self, cfg)
+        self.index = CONFIG.get('output_splunklegacy', 'index')
+        self.username = CONFIG.get('output_splunklegacy', 'username')
+        self.password = CONFIG.get('output_splunklegacy', 'password', raw=True)
+        self.host = CONFIG.get('output_splunklegacy', 'host')
+        self.port = CONFIG.getint('output_splunklegacy', 'port')
+        cowrie.core.output.Output.__init__(self)
 
 
     def start(self):
@@ -64,4 +67,3 @@ class Output(cowrie.core.output.Output):
             source='cowrie-splunk-connector')
         self.mysocket.send(json.dumps(logentry))
         self.mysocket.close()
-

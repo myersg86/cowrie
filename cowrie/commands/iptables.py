@@ -1,8 +1,10 @@
 # Copyright (c) 2013 Bas Stottelaar <basstottelaar [AT] gmail [DOT] com>
 
+from __future__ import division, absolute_import
+
 import optparse
 
-from cowrie.core.honeypot import HoneyPotCommand
+from cowrie.shell.command import HoneyPotCommand
 
 commands = {}
 
@@ -64,13 +66,13 @@ class command_iptables(HoneyPotCommand):
 
         # Utils
         def optional_arg(arg_default):
-            def func(option,opt_str,value,parser):
+            def func(option, opt_str, value, parser):
                 if parser.rargs and not parser.rargs[0].startswith('-'):
-                    val=parser.rargs[0]
+                    val = parser.rargs[0]
                     parser.rargs.pop(0)
                 else:
-                    val=arg_default
-                setattr(parser.values,option.dest,val)
+                    val = arg_default
+                setattr(parser.values, option.dest, val)
             return func
 
         # Initialize options
@@ -198,9 +200,9 @@ class command_iptables(HoneyPotCommand):
     def is_valid_table(self, table):
         if self.user_is_root():
             # Verify table existence
-            if not table in self.tables.iterkeys():
-                self.write( """%s: can\'t initialize iptables table \'%s\': Table does not exist (do you need to insmod?)
-Perhaps iptables or your kernel needs to be upgraded.\n""" % (command_iptables.APP_NAME, table) )
+            if table not in list(self.tables.keys()):
+                self.write("""%s: can\'t initialize iptables table \'%s\': Table does not exist (do you need to insmod?)
+Perhaps iptables or your kernel needs to be upgraded.\n""" % (command_iptables.APP_NAME, table))
                 self.exit()
             else:
                 # Exists
@@ -213,7 +215,7 @@ Perhaps iptables or your kernel needs to be upgraded.\n""" % (command_iptables.A
 
     def is_valid_chain(self, chain):
         # Verify chain existence. Requires valid table first
-        if not chain in self.current_table.iterkeys():
+        if chain not in list(self.current_table.keys()):
             self.write("%s: No chain/target/match by that name.\n" % command_iptables.APP_NAME)
             self.exit()
             return False
@@ -229,7 +231,7 @@ Perhaps iptables or your kernel needs to be upgraded.\n""" % (command_iptables.A
     def show_help(self):
         """ Show help and exit """
 
-        self.write( """%s %s'
+        self.write("""%s %s'
 
 Usage: iptables -[AD] chain rule-specification [options]
        iptables -I chain [rulenum] rule-specification [options]
@@ -306,7 +308,7 @@ Options:
 
                 chains = [chain]
             else:
-                chains = self.current_table.iterkeys()
+                chains = iter(self.current_table.keys())
 
             # Output buffer
             output = []
@@ -315,7 +317,7 @@ Options:
                 output.append("-P %s ACCEPT" % chain)
 
             # Done
-            self.write("\n".join(output)+'\n')
+            self.write('{0}\n'.format('\n'.join(output)))
             self.exit()
         else:
             self.no_permission()
@@ -332,7 +334,7 @@ Options:
 
                 chains = [chain]
             else:
-                chains = self.current_table.iterkeys()
+                chains = iter(self.current_table.keys())
 
             # Output buffer
             output = []
@@ -354,7 +356,7 @@ Options:
                 output.append("\n".join(chain_output))
 
             # Done
-            self.write("\n\n".join(output)+'\n')
+            self.write("{0}\n".format('\n\n'.join(output)))
             self.exit()
         else:
             self.no_permission()
@@ -370,7 +372,7 @@ Options:
 
                 chains = [chain]
             else:
-                chains = self.current_table.iterkeys()
+                chains = iter(self.current_table.keys())
 
             # Flush
             for chain in chains:
@@ -381,33 +383,31 @@ Options:
             self.no_permission()
 
     def no_permission(self):
-        self.write( """%s %s: can\'t initialize iptables table \'filter\': Permission denied (you must be root)
-Perhaps iptables or your kernel needs to be upgraded.\n"""
-            % (command_iptables.APP_NAME, command_iptables.APP_VERSION) )
+        self.write("""%s %s: can\'t initialize iptables table \'filter\': Permission denied (you must be root)
+Perhaps iptables or your kernel needs to be upgraded.\n""" % (command_iptables.APP_NAME, command_iptables.APP_VERSION))
         self.exit()
 
     def no_command(self):
         """ Print no command message and exit """
 
-        self.write( """%s %s: no command specified'
-Try `iptables -h\' or \'iptables --help\' for more information.\n"""
-            % (command_iptables.APP_NAME, command_iptables.APP_VERSION) )
+        self.write("""%s %s: no command specified'
+Try `iptables -h\' or \'iptables --help\' for more information.\n""" %
+                   (command_iptables.APP_NAME, command_iptables.APP_VERSION))
         self.exit()
 
     def unknown_option(self, option):
         """ Print unknown option message and exit """
 
-        self.write( """%s %s: unknown option \'%s\''
-Try `iptables -h\' or \'iptables --help\' for more information.\n"""
-            % (command_iptables.APP_NAME, command_iptables.APP_VERSION, option) )
+        self.write("""%s %s: unknown option \'%s\''
+Try `iptables -h\' or \'iptables --help\' for more information.\n""" %
+                   (command_iptables.APP_NAME, command_iptables.APP_VERSION, option))
         self.exit()
 
     def bad_argument(self, argument):
         """ Print bad argument and exit """
 
-        self.write( """Bad argument \'%s\'
-Try `iptables -h\' or \'iptables --help\' for more information.\n"""
-            % argument )
+        self.write("""Bad argument \'%s\'
+Try `iptables -h\' or \'iptables --help\' for more information.\n""" % argument)
         self.exit()
 
 # Definition

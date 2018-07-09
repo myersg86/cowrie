@@ -1,18 +1,16 @@
 #
 
-import time
-import re
+from __future__ import division, absolute_import
+
 import tftpy
-import os
 
-from cowrie.core.honeypot import HoneyPotCommand
-from cowrie.core.fs import *
-from cowrie.core.customparser import CustomParser
-from cowrie.core.customparser import OptionNotFound
-from cowrie.core.customparser import ExitException
+from twisted.python import log
 
-"""
-"""
+from cowrie.core.artifact import Artifact
+from cowrie.core.config import CONFIG
+from cowrie.shell.customparser import CustomParser, OptionNotFound
+from cowrie.shell.command import HoneyPotCommand
+
 
 commands = {}
 
@@ -24,7 +22,6 @@ class Progress(object):
         self.progress = 0
         self.out = protocol
 
-
     def progresshook(self, pkt):
         """
         """
@@ -33,7 +30,6 @@ class Progress(object):
             self.out.write("Transferred %d bytes" % self.progress + "\n")
         elif isinstance(pkt, tftpy.TftpPacketOACK):
             self.out.write("Received OACK, options are: %s" % pkt.options + "\n")
-
 
 
 class command_tftp(HoneyPotCommand):
@@ -48,61 +44,53 @@ class command_tftp(HoneyPotCommand):
         """
         """
         progresshook = Progress(self).progresshook
-        tclient = tftpy.TftpClient(self.hostname, int(self.port))
-        cfg = self.protocol.cfg
 
-        if cfg.has_option('honeypot', 'download_limit_size'):
-            self.limit_size = int(cfg.get('honeypot', 'download_limit_size'))
+        if CONFIG.has_option('honeypot', 'download_limit_size'):
+            self.limit_size = CONFIG.getint('honeypot', 'download_limit_size')
 
-        self.download_path = cfg.get('honeypot', 'download_path')
+        self.artifactFile = Artifact(self.file_to_get)
 
-        self.safeoutfile = '%s/%s_%s' % \
-                           (self.download_path,
-                            time.strftime('%Y%m%d%H%M%S'),
-                            re.sub('[^A-Za-z0-9]', '_', self.file_to_get))
+        tclient = None
+        url = ''
 
         try:
-            tclient.download(self.file_to_get, self.safeoutfile, progresshook)
+            tclient = tftpy.TftpClient(self.hostname, int(self.port))
+
+            # tftpy can't handle unicode string as filename
+            # so we have to convert unicode type to str type
+            tclient.download(str(self.file_to_get), self.artifactFile, progresshook)
+
+            url = 'tftp://%s/%s' % (self.hostname, self.file_to_get.strip('/'))
+
             self.file_to_get = self.fs.resolve_path(self.file_to_get, self.protocol.cwd)
-            self.fs.mkfile(self.file_to_get, 0, 0, tclient.context.metrics.bytes, 33188)
-            self.fs.update_realfile(self.fs.getfile(self.file_to_get), self.safeoutfile)
 
-            shasum = hashlib.sha256(open(self.safeoutfile, 'rb').read()).hexdigest()
-            hash_path = '%s/%s' % (self.download_path, shasum)
-
-            # If we have content already, delete temp file
-            if not os.path.exists(hash_path):
-                os.rename(self.safeoutfile, hash_path)
+            if hasattr(tclient.context, 'metrics'):
+                self.fs.mkfile(self.file_to_get, 0, 0, tclient.context.metrics.bytes, 33188)
             else:
-                os.remove(self.safeoutfile)
-                log.msg("Not storing duplicate content " + shasum)
+                self.fs.mkfile(self.file_to_get, 0, 0, 0, 33188)
 
-            log.msg(eventid='cowrie.session.file_download',
-                    format='Downloaded tftpFile (%(url)s) with SHA-256 %(shasum)s to %(outfile)s',
-                    url=self.file_to_get,
-                    outfile=hash_path,
-                    shasum=shasum)
+        except tftpy.TftpException:
+            if tclient and tclient.context and not tclient.context.fileobj.closed:
+                tclient.context.fileobj.close()
 
-            # Link friendly name to hash
-            os.symlink(shasum, self.safeoutfile)
+        if url:
 
-            # FIXME: is this necessary?
-            self.safeoutfile = hash_path
+            # log to cowrie.log
+            log.msg(format='Downloaded URL (%(url)s) with SHA-256 %(shasum)s to %(outfile)s',
+                    url=url,
+                    outfile=self.artifactFile.shasumFilename,
+                    shasum=self.artifactFile.shasum)
+
+            self.protocol.logDispatch(eventid='cowrie.session.file_download',
+                                      format='Downloaded URL (%(url)s) with SHA-256 %(shasum)s to %(outfile)s',
+                                      url=url,
+                                      outfile=self.artifactFile.shasumFilename,
+                                      shasum=self.artifactFile.shasum,
+                                      destfile=self.file_to_get)
 
             # Update the honeyfs to point to downloaded file
-            f = self.fs.getfile(self.file_to_get)
-            f[A_REALFILE] = hash_path
-
-            log.msg(eventid='cowrie.session.file_download',
-                    format='Downloaded tftpFile to %(outfile)s',
-                    outfile=self.safeoutfile
-                    )
-
-        except tftpy.TftpException, err:
-            return
-
-        except KeyboardInterrupt:
-            pass
+            self.fs.update_realfile(self.fs.getfile(self.file_to_get), self.artifactFile.shasumFilename)
+            self.fs.chown(self.file_to_get, self.protocol.user.uid, self.protocol.user.gid)
 
 
     def start(self):
@@ -137,17 +125,15 @@ class command_tftp(HoneyPotCommand):
             if self.hostname is None:
                 raise OptionNotFound("Hostname is invalid")
 
+            if self.hostname.find(':') != -1:
+                host, port = self.hostname.split(':')
+                self.hostname = host
+                self.port = int(port)
+
             self.makeTftpRetrieval()
 
-        except OptionNotFound:
-            self.exit()
-            return
-        except ExitException:
-            self.exit()
-            return
-        except Exception:
-            self.exit()
-            return
+        except Exception as err:
+            log.err(str(err))
 
         self.exit()
 

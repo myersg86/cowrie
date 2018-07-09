@@ -5,9 +5,11 @@
 This module contains the sleep command
 """
 
+from __future__ import division, absolute_import
+
 from twisted.internet import reactor
 
-from cowrie.core.honeypot import HoneyPotCommand
+from cowrie.shell.command import HoneyPotCommand
 
 commands = {}
 
@@ -26,7 +28,7 @@ class command_sleep(HoneyPotCommand):
         """
         """
         if len(self.args) == 1:
-            _time = int( self.args[0] )
+            _time = int(self.args[0])
             self.scheduled = reactor.callLater(_time, self.done)
         else:
             self.write('usage: sleep seconds\n')

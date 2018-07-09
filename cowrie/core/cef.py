@@ -29,8 +29,7 @@
 """
 This module contains ...
 """
-
-from twisted.python import log
+from __future__ import division, absolute_import
 
 #  cowrie.client.fingerprint
 #  cowrie.client.size
@@ -100,13 +99,12 @@ def formatCef(logentry):
     cefExtension = ' '.join(cefList)
 
     cefString = "CEF:0|" + \
-      cefVendor + "|" + \
-      cefProduct + "|" + \
-      cefVersion + "|" + \
-      cefSignature + "|" + \
-      cefName + "|" + \
-      cefSeverity + "|" + \
-      cefExtension
+                cefVendor + "|" + \
+                cefProduct + "|" + \
+                cefVersion + "|" + \
+                cefSignature + "|" + \
+                cefName + "|" + \
+                cefSeverity + "|" + \
+                cefExtension
 
     return cefString
-

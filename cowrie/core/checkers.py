@@ -5,6 +5,8 @@
 This module contains ...
 """
 
+from __future__ import division, absolute_import
+
 from sys import modules
 
 from zope.interface import implementer
@@ -20,6 +22,8 @@ from twisted.conch.ssh import keys
 from cowrie.core import credentials
 from cowrie.core import auth
 
+from cowrie.core.config import CONFIG
+
 @implementer(ICredentialsChecker)
 class HoneypotPublicKeyChecker(object):
     """
@@ -33,9 +37,12 @@ class HoneypotPublicKeyChecker(object):
         """
         _pubKey = keys.Key.fromString(credentials.blob)
         log.msg(eventid='cowrie.client.fingerprint',
-                format='public key attempt for user %(username)s with fingerprint %(fingerprint)s',
+                format='public key attempt for user %(username)s of type %(type)s with fingerprint %(fingerprint)s',
                 username=credentials.username,
-                fingerprint=_pubKey.fingerprint())
+                fingerprint=_pubKey.fingerprint(),
+                key=_pubKey.toString('OPENSSH'),
+                type=_pubKey.sshType())
+
         return failure.Failure(error.ConchError('Incorrect signature'))
 
 
@@ -61,12 +68,7 @@ class HoneypotPasswordChecker(object):
     Checker that accepts "keyboard-interactive" and "password"
     """
 
-    credentialInterfaces = (credentials.IUsernamePasswordIP,
-        credentials.IPluggableAuthenticationModulesIP)
-
-    def __init__(self, cfg):
-        self.cfg = cfg
-
+    credentialInterfaces = (credentials.IUsernamePasswordIP, credentials.IPluggableAuthenticationModulesIP)
 
     def requestAvatarId(self, credentials):
         """
@@ -106,29 +108,27 @@ class HoneypotPasswordChecker(object):
         authname = auth.UserDB
 
         # Is the auth_class defined in the config file?
-        if self.cfg.has_option('honeypot', 'auth_class'):
-            authclass = self.cfg.get('honeypot', 'auth_class')
+        if CONFIG.has_option('honeypot', 'auth_class'):
+            authclass = CONFIG.get('honeypot', 'auth_class')
             authmodule = "cowrie.core.auth"
 
             # Check if authclass exists in this module
             if hasattr(modules[authmodule], authclass):
                 authname = getattr(modules[authmodule], authclass)
             else:
-                log.msg('auth_class: %s not found in %s' %
-                    (authclass, authmodule))
+                log.msg('auth_class: %s not found in %s' % (authclass, authmodule))
 
-        theauth = authname(self.cfg)
+        theauth = authname()
 
         if theauth.checklogin(theusername, thepassword, ip):
             log.msg(eventid='cowrie.login.success',
                     format='login attempt [%(username)s/%(password)s] succeeded',
-                    username=theusername.encode('string-escape'),
-                    password=thepassword.encode('string-escape'))
+                    username=theusername,
+                    password=thepassword)
             return True
         else:
             log.msg(eventid='cowrie.login.failed',
                     format='login attempt [%(username)s/%(password)s] failed',
-                    username=theusername.encode('string-escape'),
-                    password=thepassword.encode('string-escape'))
+                    username=theusername,
+                    password=thepassword)
             return False
-

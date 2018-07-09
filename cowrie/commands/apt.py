@@ -1,13 +1,15 @@
 # Copyright (c) 2009 Upi Tamminen <desaster@gmail.com>
 # See the COPYRIGHT file for more information
 
+from __future__ import division, absolute_import
+
 import random
 import re
 
 from twisted.internet import reactor, defer
 from twisted.internet.defer import inlineCallbacks
 
-from cowrie.core.honeypot import HoneyPotCommand
+from cowrie.shell.command import HoneyPotCommand
 
 commands = {}
 
@@ -16,7 +18,7 @@ class command_faked_package_class_factory(object):
     def getCommand(name):
         class command_faked_installation(HoneyPotCommand):
             def call(self):
-                self.write("%s: Segmentation fault\n" % name)
+                self.write(b"%s: Segmentation fault\n" % name)
         return command_faked_installation
 
 class command_aptget(HoneyPotCommand):
@@ -37,7 +39,7 @@ class command_aptget(HoneyPotCommand):
         else:
             self.do_locked()
 
-    def sleep(self, time, time2 = None):
+    def sleep(self, time, time2=None):
         d = defer.Deferred()
         if time2:
             time = random.randint(time * 100, time2 * 100) / 100.0
@@ -108,21 +110,19 @@ pages for more information and options.
         return
 
     @inlineCallbacks
-    def do_install(self,*args):
+    def do_install(self, *args):
         if len(self.args) <= 1:
-            self.write('0 upgraded, 0 newly installed, 0 to remove and %s not upgraded.\n' % random.randint(200,300))
+            msg = '0 upgraded, 0 newly installed, 0 to remove and {0} not upgraded.\n'
+            self.write(msg.format(random.randint(200, 300)))
             self.exit()
             return
 
         packages = {}
         for y in [re.sub('[^A-Za-z0-9]', '', x) for x in self.args[1:]]:
             packages[y] = {
-                'version':      '%d.%d-%d' % \
-                    (random.choice((0, 1)),
-                    random.randint(1, 40),
-                    random.randint(1, 10)),
-                'size':         random.randint(100, 900)
-                }
+                'version': '{0}.{1}-{2}'.format(random.choice(0, 1), random.randint(1, 40), random.randint(1, 10)),
+                'size': random.randint(100, 900)
+            }
         totalsize = sum([packages[x]['size'] for x in packages])
 
         self.write('Reading package lists... Done\n')
@@ -130,34 +130,29 @@ pages for more information and options.
         self.write('Reading state information... Done\n')
         self.write('The following NEW packages will be installed:\n')
         self.write('  %s ' % ' '.join(packages) + '\n')
-        self.write('0 upgraded, %d newly installed, 0 to remove and 259 not upgraded.\n' % \
-            len(packages))
+        self.write('0 upgraded, %d newly installed, 0 to remove and 259 not upgraded.\n' % len(packages))
         self.write('Need to get %s.2kB of archives.\n' % (totalsize))
-        self.write('After this operation, %skB of additional disk space will be used.\n' % \
-            (totalsize * 2.2,))
+        self.write('After this operation, %skB of additional disk space will be used.\n' % (totalsize * 2.2,))
         i = 1
         for p in packages:
-            self.write('Get:%d http://ftp.debian.org stable/main %s %s [%s.2kB]\n' % \
-                (i, p, packages[p]['version'], packages[p]['size']))
+            self.write('Get:%d http://ftp.debian.org stable/main %s %s [%s.2kB]\n' %
+                       (i, p, packages[p]['version'], packages[p]['size']))
             i += 1
             yield self.sleep(1, 2)
-        self.write('Fetched %s.2kB in 1s (4493B/s)''\n' % (totalsize))
+        self.write('Fetched %s.2kB in 1s (4493B/s)\n' % (totalsize))
         self.write('Reading package fields... Done\n')
         yield self.sleep(1, 2)
         self.write('Reading package status... Done\n')
         self.write('(Reading database ... 177887 files and directories currently installed.)\n')
         yield self.sleep(1, 2)
         for p in packages:
-            self.write('Unpacking %s (from .../archives/%s_%s_i386.deb) ...\n' % \
-                (p, p, packages[p]['version']))
+            self.write('Unpacking %s (from .../archives/%s_%s_i386.deb) ...\n' % (p, p, packages[p]['version']))
             yield self.sleep(1, 2)
         self.write('Processing triggers for man-db ...\n')
         yield self.sleep(2)
         for p in packages:
-            self.write('Setting up %s (%s) ...\n' % \
-                (p, packages[p]['version']))
-            self.fs.mkfile('/usr/bin/%s' % p,
-                0, 0, random.randint(10000, 90000), 33188)
+            self.write('Setting up %s (%s) ...\n' % (p, packages[p]['version']))
+            self.fs.mkfile('/usr/bin/%s' % p, 0, 0, random.randint(10000, 90000), 33188)
             self.protocol.commands['/usr/bin/%s' % p] = \
                 command_faked_package_class_factory.getCommand(p)
             yield self.sleep(2)

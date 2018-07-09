@@ -5,8 +5,11 @@ __all__ = [
     'adduser',
     'apt',
     'base',
+    'base64',
     'busybox',
+    'cat',
     'curl',
+    'dd',
     'env',
     'ethtool',
     'free',
@@ -17,6 +20,7 @@ __all__ = [
     'iptables',
     'last',
     'ls',
+    'nc',
     'netstat',
     'nohup',
     'ping',
@@ -27,10 +31,11 @@ __all__ = [
     'sudo',
     'tar',
     'uname',
+    'ulimit',
     'wget',
     'which',
     'perl',
     'uptime',
     'python',
     'tftp'
-    ]
+]

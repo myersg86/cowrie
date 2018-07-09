@@ -30,14 +30,16 @@
 Docstring
 """
 
-import json
-import os
+from __future__ import division, absolute_import
 
-import twisted.python.logfile
+import json
+import time
+
+from slackclient import SlackClient
 
 import cowrie.core.output
-from slackclient import SlackClient
-import time
+from cowrie.core.config import CONFIG
+
 
 
 class Output(cowrie.core.output.Output):
@@ -45,10 +47,10 @@ class Output(cowrie.core.output.Output):
     Docstring class
     """
 
-    def __init__(self, cfg):
-        cowrie.core.output.Output.__init__(self, cfg)
-        self.slack_channel = cfg.get('output_slack', 'channel')
-        self.slack_token = cfg.get('output_slack', 'token')
+    def __init__(self):
+        self.slack_channel = CONFIG.get('output_slack', 'channel')
+        self.slack_token = CONFIG.get('output_slack', 'token')
+        cowrie.core.output.Output.__init__(self)
 
 
     def start(self):
@@ -77,4 +79,3 @@ class Output(cowrie.core.output.Output):
             channel=self.slack_channel,
             text="%s %s" % (time.strftime('%Y-%m-%d %H:%M:%S'), json.dumps(logentry, indent=4, sort_keys=True))
         )
-

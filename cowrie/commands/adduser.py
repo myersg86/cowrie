@@ -1,11 +1,13 @@
 # Copyright (c) 2010 Upi Tamminen <desaster@gmail.com>
 # See the COPYRIGHT file for more information
 
+from __future__ import division, absolute_import
+
 import random
 
 from twisted.internet import reactor
 
-from cowrie.core.honeypot import HoneyPotCommand
+from cowrie.shell.command import HoneyPotCommand
 
 commands = {}
 
@@ -56,7 +58,7 @@ class command_adduser(HoneyPotCommand):
             (O_O, 'Deleting group `%(username)s\' (1001) ...\n'),
             (O_O, 'Deleting home directory `/home/%(username)s\' ...\n'),
             (O_Q, 'Try again? [Y/n] '),
-            ]
+        ]
         self.do_output()
 
 

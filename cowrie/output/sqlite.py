@@ -1,6 +1,9 @@
 
 """
 """
+
+from __future__ import division, absolute_import
+
 import sqlite3
 
 from twisted.internet import defer
@@ -9,13 +12,15 @@ from twisted.python import log
 
 import cowrie.core.output
 
+from cowrie.core.config import CONFIG
+
+
 class Output(cowrie.core.output.Output):
     """
     """
 
-    def __init__(self, cfg):
-        self.cfg = cfg
-        cowrie.core.output.Output.__init__(self, cfg)
+    def __init__(self):
+        cowrie.core.output.Output.__init__(self)
 
 
     def start(self):
@@ -24,10 +29,13 @@ class Output(cowrie.core.output.Output):
         Need to be started with check_same_thread=False. See
         https://twistedmatrix.com/trac/ticket/3629.
         """
-        sqliteFilename = self.cfg.get('output_sqlite', 'db_file')
+        sqliteFilename = CONFIG.get('output_sqlite', 'db_file')
         try:
-            self.db = adbapi.ConnectionPool('sqlite3',
-                    database = sqliteFilename, check_same_thread=False)
+            self.db = adbapi.ConnectionPool(
+                'sqlite3',
+                database=sqliteFilename,
+                check_same_thread=False
+            )
         except sqlite3.OperationalError as e:
             log.msg(e)
 
@@ -75,51 +83,79 @@ class Output(cowrie.core.output.Output):
                 sensorid = int(r[0][0])
             self.simpleQuery(
                 "INSERT INTO `sessions` (`id`, `starttime`, `sensor`, `ip`)"
-                +  " VALUES (?, ?, ?, ?)",
+                + " VALUES (?, ?, ?, ?)",
                 (entry["session"], entry["timestamp"],
-                    sensorid, entry["src_ip"]))
+                 sensorid, entry["src_ip"]))
 
         elif entry["eventid"] == 'cowrie.login.success':
-            self.simpleQuery('INSERT INTO `auth` (`session`, `success`' + \
+            self.simpleQuery(
+                'INSERT INTO `auth` (`session`, `success`' + \
                 ', `username`, `password`, `timestamp`)' + \
                 ' VALUES (?, ?, ?, ?, ?)',
                 (entry["session"], 1, entry['username'], entry['password'],
-                entry["timestamp"]))
+                 entry["timestamp"])
+            )
 
         elif entry["eventid"] == 'cowrie.login.failed':
-            self.simpleQuery('INSERT INTO `auth` (`session`, `success`' + \
+            self.simpleQuery(
+                'INSERT INTO `auth` (`session`, `success`' + \
                 ', `username`, `password`, `timestamp`)' + \
                 ' VALUES (?, ?, ?, ?, ?)',
                 (entry["session"], 0, entry['username'], entry['password'],
-                entry["timestamp"]))
+                 entry["timestamp"])
+            )
 
-        elif entry["eventid"] == 'cowrie.command.success':
-            self.simpleQuery('INSERT INTO `input`' + \
+        elif entry["eventid"] == 'cowrie.command.input':
+            self.simpleQuery(
+                'INSERT INTO `input`' + \
                 ' (`session`, `timestamp`, `success`, `input`)' + \
                 ' VALUES (?, ?, ?, ?)',
                 (entry["session"], entry["timestamp"],
-                1, entry["input"]))
+                 1, entry["input"])
+            )
 
         elif entry["eventid"] == 'cowrie.command.failed':
-            self.simpleQuery('INSERT INTO `input`' + \
+            self.simpleQuery(
+                'INSERT INTO `input`' + \
                 ' (`session`, `timestamp`, `success`, `input`)' + \
                 ' VALUES (?, ?, ?, ?)',
                 (entry["session"], entry["timestamp"],
-                0, entry["input"]))
+                 0, entry["input"])
+            )
+
+        elif entry["eventid"] == 'cowrie.session.params':
+            self.simpleQuery(
+                'INSERT INTO `params` (`session`, `arch`)' + \
+                ' VALUES (?, ?)',
+                (entry["session"], entry["arch"])
+            )
 
         elif entry["eventid"] == 'cowrie.session.file_download':
-            self.simpleQuery('INSERT INTO `downloads`' + \
+            self.simpleQuery(
+                'INSERT INTO `downloads`' + \
                 ' (`session`, `timestamp`, `url`, `outfile`, `shasum`)' + \
                 ' VALUES (?, ?, ?, ?, ?)',
                 (entry["session"], entry["timestamp"],
-                entry['url'], entry['outfile'], entry['shasum']))
+                 entry['url'], entry['outfile'], entry['shasum'])
+            )
+
+        elif entry["eventid"] == 'cowrie.session.file_download.failed':
+            self.simpleQuery(
+                'INSERT INTO `downloads`' + \
+                ' (`session`, `timestamp`, `url`, `outfile`, `shasum`)' + \
+                ' VALUES (?, ?, ?, ?, ?)',
+                (entry["session"], entry["timestamp"],
+                 entry['url'], 'NULL', 'NULL')
+            )
 
         elif entry["eventid"] == 'cowrie.session.file_download':
-            self.simpleQuery('INSERT INTO `input`' + \
+            self.simpleQuery(
+                'INSERT INTO `input`' + \
                 ' (`session`, `timestamp`, `realm`, `input`)' + \
                 ' VALUES (?, ?, ?, ?)',
                 (entry["session"], entry["timestamp"],
-                entry["realm"], entry["input"]))
+                 entry["realm"], entry["input"])
+            )
 
         elif entry["eventid"] == 'cowrie.client.version':
             r = yield self.db.runQuery(
@@ -157,4 +193,3 @@ class Output(cowrie.core.output.Output):
             self.simpleQuery(
                 'INSERT INTO `keyfingerprints` (`session`, `username`, `fingerprint`) VALUES (?, ?, ?)',
                 (entry["session"], entry["username"], entry["fingerprint"]))
-

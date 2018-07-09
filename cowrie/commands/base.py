@@ -1,21 +1,25 @@
 # Copyright (c) 2009 Upi Tamminen <desaster@gmail.com>
 # See the COPYRIGHT file for more information
 
+from __future__ import division, absolute_import
+
+import codecs
 import time
 import datetime
-import functools
 import getopt
 import re
+import random
 
 from twisted.python import failure, log
-
 from twisted.internet import error, reactor
 
-from cowrie.core.honeypot import HoneyPotCommand,StdOutStdErrEmulationProtocol
+from cowrie.shell.honeypot import HoneyPotShell, StdOutStdErrEmulationProtocol
+from cowrie.shell.command import HoneyPotCommand
 from cowrie.core.auth import UserDB
 from cowrie.core import utils
 
 commands = {}
+
 
 class command_whoami(HoneyPotCommand):
     """
@@ -23,7 +27,7 @@ class command_whoami(HoneyPotCommand):
     def call(self):
         """
         """
-        self.write(self.protocol.user.username+'\n')
+        self.write('{0}\n'.format(self.protocol.user.username))
 commands['/usr/bin/whoami'] = command_whoami
 commands['/usr/bin/users'] = command_whoami
 
@@ -90,13 +94,13 @@ class command_w(HoneyPotCommand):
     def call(self):
         """
         """
-        self.write(' %s up %s,  1 user,  load average: 0.00, 0.00, 0.00\n' % \
-            (time.strftime('%H:%M:%S'), utils.uptime(self.protocol.uptime())))
+        self.write(' %s up %s,  1 user,  load average: 0.00, 0.00, 0.00\n' %
+                   (time.strftime('%H:%M:%S'), utils.uptime(self.protocol.uptime())))
         self.write('USER     TTY      FROM              LOGIN@   IDLE   JCPU   PCPU WHAT\n')
-        self.write('%-8s pts/0    %s %s    0.00s  0.00s  0.00s w\n' % \
-            (self.protocol.user.username,
-            self.protocol.clientIP[:17].ljust(17),
-            time.strftime('%H:%M', time.localtime(self.protocol.logintime))))
+        self.write('%-8s pts/0    %s %s    0.00s  0.00s  0.00s w\n' %
+                   (self.protocol.user.username,
+                    self.protocol.clientIP[:17].ljust(17),
+                    time.strftime('%H:%M', time.localtime(self.protocol.logintime))))
 commands['/usr/bin/w'] = command_w
 
 
@@ -107,11 +111,11 @@ class command_who(HoneyPotCommand):
     def call(self):
         """
         """
-        self.write('%-8s pts/0        %s %s (%s)\n' % \
-            (self.protocol.user.username,
-            time.strftime('%Y-%m-%d', time.localtime(self.protocol.logintime)),
-            time.strftime('%H:%M', time.localtime(self.protocol.logintime)),
-            self.protocol.clientIP))
+        self.write('%-8s pts/0        %s %s (%s)\n' %
+                   (self.protocol.user.username,
+                    time.strftime('%Y-%m-%d', time.localtime(self.protocol.logintime)),
+                    time.strftime('%H:%M', time.localtime(self.protocol.logintime)),
+                    self.protocol.clientIP))
 commands['/usr/bin/who'] = command_who
 
 
@@ -129,7 +133,7 @@ class command_echo(HoneyPotCommand):
             optlist, args = getopt.getopt(self.args, "eEn")
             for opt in optlist:
                 if opt[0] == '-e':
-                    escape_fn = functools.partial(str.decode, encoding="string_escape")
+                    escape_fn = lambda s: codecs.escape_decode(s)[0]
                 elif opt[0] == '-E':
                     escape_fn = lambda s: s
                 elif opt[0] == '-n':
@@ -137,18 +141,63 @@ class command_echo(HoneyPotCommand):
         except:
             args = self.args
 
-        # FIXME: Wrap in exception, Python escape cannot handle single digit \x codes (e.g. \x1)
         try:
-            self.write(escape_fn(re.sub('(?<=\\\\)x([0-9a-fA-F]{1})(?=\\\\|\"|\'|\s|$)', 'x0\g<1>',
-                ''.join(args).replace('\\\\x', '\\x'))).strip('\"\''))
+            # replace r'\\x' with r'\x'
+            s = ' '.join(args).replace('\\\\x', '\\x')
+
+            # replace single character escape \x0 with \x00
+            s = re.sub('(?<=\\\\)x([0-9a-fA-F])(?=\\\\|\"|\'|\s|$)', 'x0\g<1>', s)
+
+            # strip single and double quotes
+            s = s.strip('\"\'')
+
+            # if the string ends with \c escape, strip it and set newline flag to False
+            if s.endswith('\\c'):
+                s = s[:-2]
+                newline = False
+
+            if newline is True:
+                s += '\n'
+
+            self.write(escape_fn(s))
+
         except ValueError as e:
             log.msg("echo command received Python incorrect hex escape")
 
-        if newline is True:
-            self.write('\n')
 
 commands['/bin/echo'] = command_echo
 
+
+class command_printf(HoneyPotCommand):
+    """
+    """
+
+    def call(self):
+        if not len(self.args):
+            self.write('printf: usage: printf [-v var] format [arguments]\n')
+        else:
+            if '-v' not in self.args:
+                if len(self.args) < 2:
+                    escape_fn = lambda s: codecs.escape_decode(s)[0]
+
+                    # replace r'\\x' with r'\x'
+                    s = ''.join(self.args[0]).replace('\\\\x', '\\x')
+
+                    # replace single character escape \x0 with \x00
+                    s = re.sub('(?<=\\\\)x([0-9a-fA-F])(?=\\\\|\"|\'|\s|$)', 'x0\g<1>', s)
+
+                    # strip single and double quotes
+                    s = s.strip('\"\'')
+
+                    # if the string ends with \c escape, strip it
+                    if s.endswith('\\c'):
+                        s = s[:-2]
+
+                    self.write(escape_fn(s))
+
+
+commands['printf'] = command_printf
+commands['/usr/bin/printf'] = command_printf
 
 
 class command_exit(HoneyPotCommand):
@@ -195,7 +244,7 @@ class command_hostname(HoneyPotCommand):
             else:
                 self.write("hostname: you must be root to change the host name\n")
         else:
-            self.write(self.protocol.hostname+'\n')
+            self.write('{0}\n'.format(self.protocol.hostname))
 commands['/bin/hostname'] = command_hostname
 
 
@@ -203,6 +252,7 @@ commands['/bin/hostname'] = command_hostname
 class command_ps(HoneyPotCommand):
     """
     """
+
     def call(self):
         """
         """
@@ -210,43 +260,209 @@ class command_ps(HoneyPotCommand):
         args = ''
         if len(self.args):
             args = self.args[0].strip()
-        _user, _pid, _cpu, _mem, _vsz, _rss, _tty, _stat, \
-            _start, _time, _command = list(range(11))
+        _user, _pid, _cpu, _mem, _vsz, _rss, _tty, _stat, _start, _time, _command = list(range(11))
+        output_array = []
+
         output = (
-            ('USER      ', ' PID', ' %CPU', ' %MEM', '    VSZ', '   RSS', ' TTY      ', 'STAT ', 'START', '   TIME ', 'COMMAND',),
-            ('root      ', '   1', '  0.0', '  0.1', '   2100', '   688', ' ?        ', 'Ss   ', 'Nov06', '   0:07 ', 'init [2]  ',),
-            ('root      ', '   2', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:00 ', '[kthreadd]',),
-            ('root      ', '   3', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:00 ', '[migration/0]',),
-            ('root      ', '   4', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:00 ', '[ksoftirqd/0]',),
-            ('root      ', '   5', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:00 ', '[watchdog/0]',),
-            ('root      ', '   6', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:17 ', '[events/0]',),
-            ('root      ', '   7', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:00 ', '[khelper]',),
-            ('root      ', '  39', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:00 ', '[kblockd/0]',),
-            ('root      ', '  41', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:00 ', '[kacpid]',),
-            ('root      ', '  42', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:00 ', '[kacpi_notify]',),
-            ('root      ', ' 170', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:00 ', '[kseriod]',),
-            ('root      ', ' 207', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S    ', 'Nov06', '   0:01 ', '[pdflush]',),
-            ('root      ', ' 208', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S    ', 'Nov06', '   0:00 ', '[pdflush]',),
-            ('root      ', ' 209', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:00 ', '[kswapd0]',),
-            ('root      ', ' 210', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:00 ', '[aio/0]',),
-            ('root      ', ' 748', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:00 ', '[ata/0]',),
-            ('root      ', ' 749', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:00 ', '[ata_aux]',),
-            ('root      ', ' 929', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:00 ', '[scsi_eh_0]',),
-            ('root      ', '1014', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'D<   ', 'Nov06', '   0:03 ', '[kjournald]',),
-            ('root      ', '1087', '  0.0', '  0.1', '   2288', '   772', ' ?        ', 'S<s  ', 'Nov06', '   0:00 ', 'udevd --daemon',),
-            ('root      ', '1553', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06', '   0:00 ', '[kpsmoused]',),
-            ('root      ', '2054', '  0.0', '  0.2', '  28428', '  1508', ' ?        ', 'Sl   ', 'Nov06', '   0:01 ', '/usr/sbin/rsyslogd -c3',),
-            ('root      ', '2103', '  0.0', '  0.2', '   2628', '  1196', ' tty1     ', 'Ss   ', 'Nov06', '   0:00 ', '/bin/login --     ',),
-            ('root      ', '2105', '  0.0', '  0.0', '   1764', '   504', ' tty2     ', 'Ss+  ', 'Nov06', '   0:00 ', '/sbin/getty 38400 tty2',),
-            ('root      ', '2107', '  0.0', '  0.0', '   1764', '   504', ' tty3     ', 'Ss+  ', 'Nov06', '   0:00 ', '/sbin/getty 38400 tty3',),
-            ('root      ', '2109', '  0.0', '  0.0', '   1764', '   504', ' tty4     ', 'Ss+  ', 'Nov06', '   0:00 ', '/sbin/getty 38400 tty4',),
-            ('root      ', '2110', '  0.0', '  0.0', '   1764', '   504', ' tty5     ', 'Ss+  ', 'Nov06', '   0:00 ', '/sbin/getty 38400 tty5',),
-            ('root      ', '2112', '  0.0', '  0.0', '   1764', '   508', ' tty6     ', 'Ss+  ', 'Nov06', '   0:00 ', '/sbin/getty 38400 tty6',),
-            ('root      ', '2133', '  0.0', '  0.1', '   2180', '   620', ' ?        ', 'S<s  ', 'Nov06', '   0:00 ', 'dhclient3 -pf /var/run/dhclient.eth0.pid -lf /var/lib/dhcp3/dhclien',),
-            ('root      ', '4969', '  0.0', '  0.1', '   5416', '  1024', ' ?        ', 'Ss   ', 'Nov08', '   0:00 ', '/usr/sbin/sshd: %s@pts/0' % user,),
-            ('%s'.ljust(8) % user, '5673', '  0.0', '  0.2', '   2924', '  1540', ' pts/0    ', 'Ss   ', '04:30', '   0:00 ', '-bash',),
-            ('%s'.ljust(8) % user, '5679', '  0.0', '  0.1', '   2432', '   928', ' pts/0    ', 'R+   ', '04:32', '   0:00 ', 'ps %s' % ' '.join(self.args),)
+            '%s'.ljust(15 - len("USER")) % "USER",
+            '%s'.ljust(8 - len("PID")) % "PID",
+            '%s'.ljust(13 - len("%CPU")) % "%CPU",
+            '%s'.ljust(13 - len("%MEM")) % "%MEM",
+            '%s'.ljust(12 - len("VSZ")) % "VSZ",
+            '%s'.ljust(12 - len("RSS")) % "RSS",
+            '%s'.ljust(10 - len("TTY")) % "TTY",
+            '%s'.ljust(8 - len("STAT")) % "STAT",
+            '%s'.ljust(8 - len("START")) % "START",
+            '%s'.ljust(8 - len("TIME")) % "TIME",
+            '%s'.ljust(30 - len("COMMAND")) % "COMMAND")
+        output_array.append(output)
+        if (self.protocol.user.server.process):
+            for single_ps in self.protocol.user.server.process:
+                output = ('%s'.ljust(15 - len(str(single_ps['USER']))) % str(single_ps['USER']),
+                          '%s'.ljust(8 - len(str(single_ps['PID']))) % str(single_ps['PID']),
+                          '%s'.ljust(13 - len(str(round(single_ps['CPU'], 2)))) % str(round(single_ps['CPU'], 2)),
+                          '%s'.ljust(13 - len(str(round(single_ps['MEM'], 2)))) % str(round(single_ps['MEM'], 2)),
+                          '%s'.ljust(12 - len(str(single_ps['VSZ']))) % str(single_ps['VSZ']),
+                          '%s'.ljust(12 - len(str(single_ps['RSS']))) % str(single_ps['RSS']),
+                          '%s'.ljust(10 - len(str(single_ps['TTY']))) % str(single_ps['TTY']),
+                          '%s'.ljust(8 - len(str(single_ps['STAT']))) % str(single_ps['STAT']),
+                          '%s'.ljust(8 - len(str(single_ps['START']))) % str(single_ps['START']),
+                          '%s'.ljust(8 - len(str(single_ps['TIME']))) % str(single_ps['TIME']),
+                          '%s'.ljust(30 - len(str(single_ps['COMMAND']))) % str(single_ps['COMMAND']))
+                output_array.append(output)
+            process = random.randint(4000, 8000)
+            output = ('%s'.ljust(15 - len('root')) % 'root',
+                      '%s'.ljust(8 - len(str(process))) % str(process),
+                      '%s'.ljust(13 - len('0.0')) % '0.0',
+                      '%s'.ljust(13 - len('0.1')) % '0.1',
+                      '%s'.ljust(12 - len('5416')) % '5416',
+                      '%s'.ljust(12 - len('1024')) % '1024',
+                      '%s'.ljust(10 - len('?')) % '?',
+                      '%s'.ljust(8 - len('Ss')) % 'Ss',
+                      '%s'.ljust(8 - len('June22')) % 'June22',
+                      '%s'.ljust(8 - len('0:00')) % '0:00',
+                      '%s'.ljust(30 - len('/usr/sbin/sshd: %s@pts/0')) % '/usr/sbin/sshd: %s@pts/0' % user)
+            output_array.append(output)
+            process = process + 5
+            output = ('%s'.ljust(15 - len(user)) % user,
+                      '%s'.ljust(8 - len(str(process))) % str(process),
+                      '%s'.ljust(13 - len('0.0')) % '0.0',
+                      '%s'.ljust(13 - len('0.1')) % '0.1',
+                      '%s'.ljust(12 - len('2925')) % '5416',
+                      '%s'.ljust(12 - len('1541')) % '1024',
+                      '%s'.ljust(10 - len('pts/0')) % 'pts/0',
+                      '%s'.ljust(8 - len('Ss')) % 'Ss',
+                      '%s'.ljust(8 - len('06:30')) % '06:30',
+                      '%s'.ljust(8 - len('0:00')) % '0:00',
+                      '%s'.ljust(30 - len('bash')) % '-bash')
+            output_array.append(output)
+            process = process + 2
+            output = ('%s'.ljust(15 - len(user)) % user,
+                      '%s'.ljust(8 - len(str(process))) % str(process),
+                      '%s'.ljust(13 - len('0.0')) % '0.0',
+                      '%s'.ljust(13 - len('0.1')) % '0.1',
+                      '%s'.ljust(12 - len('2435')) % '2435',
+                      '%s'.ljust(12 - len('929')) % '929',
+                      '%s'.ljust(10 - len('pts/0')) % 'pts/0',
+                      '%s'.ljust(8 - len('Ss')) % 'Ss',
+                      '%s'.ljust(8 - len('06:30')) % '06:30',
+                      '%s'.ljust(8 - len('0:00')) % '0:00',
+                      '%s'.ljust(30 - len('ps')) % 'ps %s' % ' '.join(self.args))
+
+            output_array.append(output)
+        else:
+            output_array = (
+                (
+                    'USER      ', ' PID', ' %CPU', ' %MEM', '    VSZ', '   RSS', ' TTY      ', 'STAT ', 'START',
+                    '   TIME ',
+                    'COMMAND',),
+                (
+                    'root      ', '   1', '  0.0', '  0.1', '   2100', '   688', ' ?        ', 'Ss   ', 'Nov06',
+                    '   0:07 ',
+                    'init [2]  ',),
+                (
+                    'root      ', '   2', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:00 ',
+                    '[kthreadd]',),
+                (
+                    'root      ', '   3', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:00 ',
+                    '[migration/0]',),
+                (
+                    'root      ', '   4', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:00 ',
+                    '[ksoftirqd/0]',),
+                (
+                    'root      ', '   5', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:00 ',
+                    '[watchdog/0]',),
+                (
+                    'root      ', '   6', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:17 ',
+                    '[events/0]',),
+                (
+                    'root      ', '   7', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:00 ',
+                    '[khelper]',),
+                (
+                    'root      ', '  39', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:00 ',
+                    '[kblockd/0]',),
+                (
+                    'root      ', '  41', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:00 ',
+                    '[kacpid]',),
+                (
+                    'root      ', '  42', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:00 ',
+                    '[kacpi_notify]',),
+                (
+                    'root      ', ' 170', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:00 ',
+                    '[kseriod]',),
+                (
+                    'root      ', ' 207', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S    ', 'Nov06',
+                    '   0:01 ',
+                    '[pdflush]',),
+                (
+                    'root      ', ' 208', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S    ', 'Nov06',
+                    '   0:00 ',
+                    '[pdflush]',),
+                (
+                    'root      ', ' 209', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:00 ',
+                    '[kswapd0]',),
+                (
+                    'root      ', ' 210', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:00 ',
+                    '[aio/0]',),
+                (
+                    'root      ', ' 748', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:00 ',
+                    '[ata/0]',),
+                (
+                    'root      ', ' 749', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:00 ',
+                    '[ata_aux]',),
+                (
+                    'root      ', ' 929', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:00 ',
+                    '[scsi_eh_0]',),
+                (
+                    'root      ', '1014', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'D<   ', 'Nov06',
+                    '   0:03 ',
+                    '[kjournald]',),
+                (
+                    'root      ', '1087', '  0.0', '  0.1', '   2288', '   772', ' ?        ', 'S<s  ', 'Nov06',
+                    '   0:00 ',
+                    'udevd --daemon',),
+                (
+                    'root      ', '1553', '  0.0', '  0.0', '      0', '     0', ' ?        ', 'S<   ', 'Nov06',
+                    '   0:00 ',
+                    '[kpsmoused]',),
+                (
+                    'root      ', '2054', '  0.0', '  0.2', '  28428', '  1508', ' ?        ', 'Sl   ', 'Nov06',
+                    '   0:01 ',
+                    '/usr/sbin/rsyslogd -c3',),
+                (
+                    'root      ', '2103', '  0.0', '  0.2', '   2628', '  1196', ' tty1     ', 'Ss   ', 'Nov06',
+                    '   0:00 ',
+                    '/bin/login --     ',),
+                (
+                    'root      ', '2105', '  0.0', '  0.0', '   1764', '   504', ' tty2     ', 'Ss+  ', 'Nov06',
+                    '   0:00 ',
+                    '/sbin/getty 38400 tty2',),
+                (
+                    'root      ', '2107', '  0.0', '  0.0', '   1764', '   504', ' tty3     ', 'Ss+  ', 'Nov06',
+                    '   0:00 ',
+                    '/sbin/getty 38400 tty3',),
+                (
+                    'root      ', '2109', '  0.0', '  0.0', '   1764', '   504', ' tty4     ', 'Ss+  ', 'Nov06',
+                    '   0:00 ',
+                    '/sbin/getty 38400 tty4',),
+                (
+                    'root      ', '2110', '  0.0', '  0.0', '   1764', '   504', ' tty5     ', 'Ss+  ', 'Nov06',
+                    '   0:00 ',
+                    '/sbin/getty 38400 tty5',),
+                (
+                    'root      ', '2112', '  0.0', '  0.0', '   1764', '   508', ' tty6     ', 'Ss+  ', 'Nov06',
+                    '   0:00 ',
+                    '/sbin/getty 38400 tty6',),
+                (
+                    'root      ', '2133', '  0.0', '  0.1', '   2180', '   620', ' ?        ', 'S<s  ', 'Nov06',
+                    '   0:00 ',
+                    'dhclient3 -pf /var/run/dhclient.eth0.pid -lf /var/lib/dhcp3/dhclien',),
+                (
+                    'root      ', '4969', '  0.0', '  0.1', '   5416', '  1024', ' ?        ', 'Ss   ', 'Nov08',
+                    '   0:00 ',
+                    '/usr/sbin/sshd: %s@pts/0' % user,),
+                ('%s'.ljust(8) % user, '5673', '  0.0', '  0.2', '   2924', '  1540', ' pts/0    ', 'Ss   ', '04:30',
+                 '   0:00 ', '-bash',),
+                ('%s'.ljust(8) % user, '5679', '  0.0', '  0.1', '   2432', '   928', ' pts/0    ', 'R+   ', '04:32',
+                 '   0:00 ', 'ps %s' % ' '.join(self.args),)
             )
+
+        output = output_array
         for i in range(len(output)):
             if i != 0:
                 if 'a' not in args and output[i][_user].strip() != user:
@@ -258,12 +474,13 @@ class command_ps(HoneyPotCommand):
             if 'a' in args or 'x' in args:
                 l = [_pid, _tty, _stat, _time, _command]
             if 'u' in args:
-                l = [_user, _pid, _cpu, _mem, _vsz, _rss, _tty, _stat,
-                    _start, _time, _command]
+                l = [_user, _pid, _cpu, _mem, _vsz, _rss, _tty, _stat, _start, _time, _command]
             s = ''.join([output[i][x] for x in l])
             if 'w' not in args:
                 s = s[:80]
-            self.write(s+'\n')
+            self.write('{0}\n'.format(s))
+
+
 commands['/bin/ps'] = command_ps
 
 
@@ -275,8 +492,7 @@ class command_id(HoneyPotCommand):
         """
         """
         u = self.protocol.user
-        self.write('uid=%d(%s) gid=%d(%s) groups=%d(%s)\n' % \
-            (u.uid, u.username, u.gid, u.username, u.gid, u.username))
+        self.write('uid=%d(%s) gid=%d(%s) groups=%d(%s)\n' % (u.uid, u.username, u.gid, u.username, u.gid, u.username))
 commands['/usr/bin/id'] = command_id
 
 
@@ -309,9 +525,6 @@ class command_passwd(HoneyPotCommand):
             self.write('Sorry, passwords do not match\n')
             self.exit()
             return
-
-        userdb = UserDB(self.protocol.cfg)
-        userdb.adduser(self.protocol.user.username, self.passwd)
 
         self.write('passwd: password updated successfully\n')
         self.exit()
@@ -351,9 +564,9 @@ class command_shutdown(HoneyPotCommand):
                 "-c:      cancel a running shutdown. ",
                 "-t secs: delay between warning and kill signal. ",
                 "** the \"time\" argument is mandatory! (try \"now\") **",
-                )
+            )
             for l in output:
-                self.write(l+'\n')
+                self.write('{0}\n'.format(l))
             self.exit()
         elif len(self.args) > 1 and self.args[0].strip().count('-h') \
                 and self.args[1].strip().count('now'):
@@ -446,7 +659,7 @@ class command_date(HoneyPotCommand):
         """
         """
         time = datetime.datetime.utcnow()
-        self.write(time.strftime("%a %b %d %H:%M:%S UTC %Y")+'\n')
+        self.write('{0}\n'.format(time.strftime("%a %b %d %H:%M:%S UTC %Y")))
 commands['/bin/date'] = command_date
 
 class command_yes(HoneyPotCommand):
@@ -462,7 +675,7 @@ class command_yes(HoneyPotCommand):
         """
         """
         if len(self.args):
-            self.write(' '.join(self.args)+'\n')
+            self.write("{0}{1}".format(' '.join(self.args, '\n')))
         else:
             self.write('y\n')
         self.scheduled = reactor.callLater(0.01, self.y)
@@ -484,24 +697,31 @@ class command_sh(HoneyPotCommand):
         """
         """
         if len(self.args) and self.args[0].strip() == '-c':
-            line = ' '.join(self.args)
-            cmd = self.args[1]
-            cmdclass = self.protocol.getCommand(cmd,
-                                                self.environ['PATH'].split(':'))
-            if cmdclass:
-                log.msg(eventid='cowrie.command.success',
-                        input=line,
-                        format='Command found: %(input)s')
-                command = StdOutStdErrEmulationProtocol(self.protocol,cmdclass,self.args[2:],self.input_data,None)
-                self.protocol.pp.insert_command(command)
-                # Place this here so it doesn't write out only if last statement
 
-                if self.input_data:
-                    self.write(self.input_data)
-            else:
-                log.msg(eventid='cowrie.command.failed',
-                        input=''.join(cmd), format='Command not found: %(input)s')
-                self.write('bash: %s: command not found\n' % (cmd))
+            line = ' '.join(self.args[1:])
+
+            # it might be sh -c 'echo "sometext"', so don't use line.strip('\'\"')
+            if (line[0] == '\'' and line[-1] == '\'') or (line[0] == '"' and line[-1] == '"'):
+                line = line[1:-1]
+
+            self.execute_commands(line)
+
+        elif self.input_data:
+            self.execute_commands(self.input_data)
+
+        # TODO: handle spawning multiple shells, support other sh flags
+
+    def execute_commands(self, cmds):
+
+        # self.input_data holds commands passed via PIPE
+        # create new HoneyPotShell for our a new 'sh' shell
+        self.protocol.cmdstack.append(HoneyPotShell(self.protocol, interactive=False))
+
+        # call lineReceived method that indicates that we have some commands to parse
+        self.protocol.cmdstack[-1].lineReceived(cmds)
+
+        # remove the shell
+        self.protocol.cmdstack.pop()
 
 
 commands['/bin/bash'] = command_sh
@@ -540,7 +760,7 @@ class command_php(HoneyPotCommand):
                 'Copyright (c) 1997-2010 The PHP Group'
             )
             for l in output:
-                self.write(l+'\n')
+                self.write('{0}\n'.format(l))
             self.exit()
         elif self.args[0] == '-h':
             output = (
@@ -584,7 +804,7 @@ class command_php(HoneyPotCommand):
                 ''
             )
             for l in output:
-                self.write(l+'\n')
+                self.write('{0}\n'.format(l))
             self.exit()
         else:
             self.exit()
@@ -596,7 +816,7 @@ class command_php(HoneyPotCommand):
         log.msg(eventid='cowrie.command.success',
                 realm='php',
                 input=line,
-                format='INPUT (%(realm)s): %(input)s' )
+                format='INPUT (%(realm)s): %(input)s')
 
 
     def handle_CTRL_D(self):
@@ -648,5 +868,6 @@ commands['/bin/su'] = command_nop
 commands['/bin/chown'] = command_nop
 commands['/bin/chgrp'] = command_nop
 commands['/usr/bin/chattr'] = command_nop
+commands[':'] = command_nop
 
 # vim: set sw=4 et:

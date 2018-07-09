@@ -5,23 +5,22 @@
 This module contains the python commnad
 """
 
-from cowrie.core.honeypot import HoneyPotCommand
+from __future__ import division, absolute_import
+
 import getopt
+
 from twisted.python import log
 
-commands = {}
+from cowrie.shell.command import HoneyPotCommand
 
+commands = {}
 
 class command_python(HoneyPotCommand):
     """
     """
     def version(self):
-        output = (
-            'Python 2.7.11+'
-        )
-        for l in output:
-            self.write(l + '\n')
-        self.exit()
+        ver = 'Python 2.7.11+'
+        self.write(ver + '\n')
 
 
     def help(self):
@@ -81,7 +80,7 @@ class command_python(HoneyPotCommand):
         try:
             opts, args = getopt.gnu_getopt(self.args, 'BdEhiORsStuvVx3c:m:Q:W:', ['help', 'version'])
         except getopt.GetoptError as err:
-            self.write("Unknown option: -" +  err.opt + "\n")
+            self.write("Unknown option: -{0}\n".format(err.opt))
             self.write("usage: python [option] ... [-c cmd | -m mod | file | -] [arg] ... \n")
             self.write("Try `python -h' for more information.\n")
             self.exit()
@@ -89,19 +88,22 @@ class command_python(HoneyPotCommand):
 
         # Parse options
         for o, a in opts:
-            if o in ("-v"):
+            if o in "-V":
                 self.version()
                 self.exit()
                 return
-            elif o in ("--help"):
+            elif o in "--help":
                 self.help()
                 self.exit()
                 return
-            elif o in ('-h'):
+            elif o in '-h':
                 self.help()
                 self.exit()
-            elif o in ('--version'):
+                return
+            elif o in '--version':
                 self.version()
+                self.exit()
+                return
 
         for value in args:
             sourcefile = self.fs.resolve_path(value, self.protocol.cwd)

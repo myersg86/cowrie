@@ -5,11 +5,11 @@
 This module contains the service commnad
 """
 
+from __future__ import division, absolute_import
+
 import getopt
 
-from twisted.python import log
-
-from cowrie.core.honeypot import HoneyPotCommand
+from cowrie.shell.command import HoneyPotCommand
 
 commands = {}
 
@@ -23,64 +23,64 @@ class command_service(HoneyPotCommand):
         more services can be added here.
         """
         output = (
-         '[ + ]  acpid',
-         '[ - ]  alsa-utils',
-         '[ + ]  anacron',
-         '[ + ]  apparmor',
-         '[ + ]  apport',
-         '[ + ]  avahi-daemon',
-         '[ + ]  bluetooth',
-         '[ - ]  bootmisc.sh',
-         '[ - ]  brltty',
-         '[ - ]  checkfs.sh',
-         '[ - ]  checkroot-bootclean.sh',
-         '[ - ]  checkroot.sh',
-         '[ + ]  console-setup',
-         '[ + ]  cron',
-         '[ + ]  cups',
-         '[ + ]  cups-browsed',
-         '[ + ]  dbus',
-         '[ - ]  dns-clean',
-         '[ + ]  grub-common',
-         '[ - ]  hostname.sh',
-         '[ - ]  hwclock.sh',
-         '[ + ]  irqbalance',
-         '[ - ]  kerneloops',
-         '[ - ]  killprocs',
-         '[ + ]  kmod',
-         '[ + ]  lightdm',
-         '[ - ]  mountall-bootclean.sh',
-         '[ - ]  mountall.sh',
-         '[ - ]  mountdevsubfs.sh',
-         '[ - ]  mountkernfs.sh',
-         '[ - ]  mountnfs-bootclean.sh',
-         '[ - ]  mountnfs.sh',
-         '[ + ]  network-manager',
-         '[ + ]  networking',
-         '[ + ]  ondemand',
-         '[ + ]  open-vm-tools',
-         '[ - ]  plymouth',
-         '[ - ]  plymouth-log',
-         '[ - ]  pppd-dns',
-         '[ + ]  procps',
-         '[ - ]  rc.local',
-         '[ + ]  resolvconf',
-         '[ - ]  rsync',
-         '[ + ]  rsyslog',
-         '[ - ]  saned',
-         '[ - ]  sendsigs',
-         '[ + ]  speech-dispatcher',
-         '[ + ]  thermald',
-         '[ + ]  udev',
-         '[ + ]  ufw',
-         '[ - ]  umountfs',
-         '[ - ]  umountnfs.sh',
-         '[ - ]  umountroot',
-         '[ - ]  unattended-upgrades',
-         '[ + ]  urandom',
-         '[ - ]  uuidd',
-         '[ + ]  whoopsie',
-         '[ - ]  x11-common')
+            '[ + ]  acpid',
+            '[ - ]  alsa-utils',
+            '[ + ]  anacron',
+            '[ + ]  apparmor',
+            '[ + ]  apport',
+            '[ + ]  avahi-daemon',
+            '[ + ]  bluetooth',
+            '[ - ]  bootmisc.sh',
+            '[ - ]  brltty',
+            '[ - ]  checkfs.sh',
+            '[ - ]  checkroot-bootclean.sh',
+            '[ - ]  checkroot.sh',
+            '[ + ]  console-setup',
+            '[ + ]  cron',
+            '[ + ]  cups',
+            '[ + ]  cups-browsed',
+            '[ + ]  dbus',
+            '[ - ]  dns-clean',
+            '[ + ]  grub-common',
+            '[ - ]  hostname.sh',
+            '[ - ]  hwclock.sh',
+            '[ + ]  irqbalance',
+            '[ - ]  kerneloops',
+            '[ - ]  killprocs',
+            '[ + ]  kmod',
+            '[ + ]  lightdm',
+            '[ - ]  mountall-bootclean.sh',
+            '[ - ]  mountall.sh',
+            '[ - ]  mountdevsubfs.sh',
+            '[ - ]  mountkernfs.sh',
+            '[ - ]  mountnfs-bootclean.sh',
+            '[ - ]  mountnfs.sh',
+            '[ + ]  network-manager',
+            '[ + ]  networking',
+            '[ + ]  ondemand',
+            '[ + ]  open-vm-tools',
+            '[ - ]  plymouth',
+            '[ - ]  plymouth-log',
+            '[ - ]  pppd-dns',
+            '[ + ]  procps',
+            '[ - ]  rc.local',
+            '[ + ]  resolvconf',
+            '[ - ]  rsync',
+            '[ + ]  rsyslog',
+            '[ - ]  saned',
+            '[ - ]  sendsigs',
+            '[ + ]  speech-dispatcher',
+            '[ + ]  thermald',
+            '[ + ]  udev',
+            '[ + ]  ufw',
+            '[ - ]  umountfs',
+            '[ - ]  umountnfs.sh',
+            '[ - ]  umountroot',
+            '[ - ]  unattended-upgrades',
+            '[ + ]  urandom',
+            '[ - ]  uuidd',
+            '[ + ]  whoopsie',
+            '[ - ]  x11-common')
         for l in output:
             self.write(l + '\n')
 
@@ -101,7 +101,7 @@ class command_service(HoneyPotCommand):
             self.help()
             return
 
-        if not opts and not args: 
+        if not opts and not args:
             self.help()
             return
 
@@ -121,4 +121,3 @@ class command_service(HoneyPotCommand):
 
 
 commands['/usr/sbin/service'] = command_service
-

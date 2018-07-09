@@ -4,6 +4,8 @@
 """
 """
 
+from __future__ import division, absolute_import
+
 import time
 import re
 import hashlib
@@ -13,7 +15,7 @@ import socket
 from twisted.python import log
 from twisted.internet import reactor
 
-from cowrie.core.honeypot import HoneyPotCommand
+from cowrie.shell.command import HoneyPotCommand
 
 commands = {}
 
@@ -35,8 +37,7 @@ class command_ssh(HoneyPotCommand):
         """
         """
         try:
-            optlist, args = getopt.getopt(self.args,
-                '-1246AaCfgKkMNnqsTtVvXxYb:c:D:e:F:i:L:l:m:O:o:p:R:S:w:')
+            optlist, args = getopt.getopt(self.args, '-1246AaCfgKkMNnqsTtVvXxYb:c:D:e:F:i:L:l:m:O:o:p:R:S:w:')
         except getopt.GetoptError as err:
             self.write('Unrecognized option\n')
             self.exit()
@@ -53,8 +54,8 @@ class command_ssh(HoneyPotCommand):
                     '           [-l login_name] [-m mac_spec] [-O ctl_cmd] [-o option] [-p port]',
                     '           [-R [bind_address:]port:host:hostport] [-S ctl_path]',
                     '           [-w local_tun[:remote_tun]] [user@]hostname [command]',
-                    ):
-                self.write(l+'\n')
+            ):
+                self.write('{0}\n'.format(l))
             self.exit()
             return
         user, host = 'root', args[0]
@@ -72,14 +73,12 @@ class command_ssh(HoneyPotCommand):
                 self.exit()
         else:
             s = hashlib.md5(host).hexdigest()
-            self.ip = '.'.join([str(int(x, 16)) for x in
-                (s[0:2], s[2:4], s[4:6], s[6:8])])
+            self.ip = '.'.join([str(int(x, 16)) for x in (s[0:2], s[2:4], s[4:6], s[6:8])])
 
         self.host = host
         self.user = user
 
-        self.write('The authenticity of host \'%s (%s)\' can\'t be established.\n' % \
-            (self.host, self.ip))
+        self.write('The authenticity of host \'%s (%s)\' can\'t be established.\n' % (self.host, self.ip))
         self.write('RSA key fingerprint is 9d:30:97:8a:9e:48:0d:de:04:8d:76:3a:7b:4b:30:f8.\n')
         self.write('Are you sure you want to continue connecting (yes/no)? ')
         self.callbacks = [self.yesno, self.wait]
@@ -117,15 +116,14 @@ class command_ssh(HoneyPotCommand):
         self.write(
             'Linux %s 2.6.26-2-686 #1 SMP Wed Nov 4 20:45:37 UTC 2009 i686\n' % \
             (self.protocol.hostname,))
-        self.write('Last login: %s from 192.168.9.4\n' % \
-            (time.ctime(time.time() - 123123),))
+        self.write('Last login: %s from 192.168.9.4\n' % (time.ctime(time.time() - 123123),))
         self.exit()
 
 
     def lineReceived(self, line):
         """
         """
-        log.msg( 'INPUT (ssh):', line )
+        log.msg('INPUT (ssh):', line)
         if len(self.callbacks):
             self.callbacks.pop(0)(line)
 commands['/usr/bin/ssh'] = command_ssh

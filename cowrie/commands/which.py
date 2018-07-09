@@ -1,6 +1,8 @@
 # Copyright (c) 2013 Bas Stottelaar <basstottelaar [AT] gmail [DOT] com>
 
-from cowrie.core.honeypot import HoneyPotCommand
+from __future__ import division, absolute_import
+
+from cowrie.shell.command import HoneyPotCommand
 
 commands = {}
 
@@ -12,7 +14,7 @@ class command_which(HoneyPotCommand):
         """ Look up all the arguments on PATH and print each (first) result """
 
         # No arguments, just exit
-        if not len(self.args) or not 'PATH' in self.environ:
+        if not len(self.args) or 'PATH' not in self.environ:
             return
 
         # Look up each file

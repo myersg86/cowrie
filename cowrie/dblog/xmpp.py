@@ -1,40 +1,47 @@
-from twisted.words.xish import domish
-from twisted.python import log
-from wokkel.xmppim import AvailablePresence
-from twisted.words.protocols.jabber.jid import JID
-from wokkel import muc
+
+from __future__ import division, absolute_import
+
 import uuid
 import json
+
+from twisted.words.xish import domish
+from twisted.python import log
+from twisted.words.protocols.jabber.jid import JID
+
+from wokkel.xmppim import AvailablePresence
+from wokkel import muc
+
+from cowrie.core.config import CONFIG
 
 class XMPPLoggerProtocol(muc.MUCClient):
 
     def __init__(self, rooms, server, nick):
         muc.MUCClient.__init__(self)
-        self.server   = rooms.host
+        self.server = rooms.host
         self.jrooms = rooms
         self._roomOccupantMap = {}
         log.msg(rooms.user)
         log.msg(rooms.host)
-        self.nick     = nick
-        self.last     = {}
+        self.nick = nick
+        self.last = {}
         self.activity = None
 
     def connectionInitialized(self):
         """The bot has connected to the xmpp server, now try to join the room.
         """
-        self.join(self.jrooms, self.nick);
+        self.join(self.jrooms, self.nick)
 
     def joinedRoom(self, room):
-        log.msg( 'Joined room %s' % room.name )
+        log.msg('Joined room %s' % room.name)
 
     def connectionMade(self):
-        log.msg( 'Connected!' )
+        log.msg('Connected!')
 
         # send initial presence
         self.send(AvailablePresence())
 
     def connectionLost(self, reason):
-        log.msg( 'Disconnected!' )
+        log.msg('Disconnected!')
 
     def onMessage(self, msg):
         pass
@@ -52,37 +59,36 @@ from cowrie.core import dblog
 from twisted.words.xish import domish
 
 class DBLogger(dblog.DBLogger):
-    def start(self, cfg):
+    def start(self):
         from random import choice
         import string
 
-        server      = cfg.get('database_xmpp', 'server')
-        user        = cfg.get('database_xmpp', 'user')
-        password    = cfg.get('database_xmpp', 'password')
-        muc         = cfg.get('database_xmpp', 'muc')
+        server = CONFIG.get('database_xmpp', 'server')
+        user = CONFIG.get('database_xmpp', 'user')
+        password = CONFIG.get('database_xmpp', 'password')
+        muc = CONFIG.get('database_xmpp', 'muc')
         channels = {}
         for i in ('createsession', 'connectionlost', 'loginfailed',
                   'loginsucceeded', 'command', 'clientversion'):
-            x = cfg.get('database_xmpp', 'signal_' + i)
+            x = CONFIG.get('database_xmpp', 'signal_' + i)
             if not x in channels:
                 channels[x] = []
             channels[x].append(i)
 
-        resource = ''.join([choice(string.ascii_letters)
-            for i in range(8)])
+        resource = ''.join([choice(string.ascii_letters) for i in range(8)])
         jid = user + '/' + resource
         application = service.Application('honeypot')
-        self.run(application, jid, password, JID(None,[muc,server,None]), channels)
+        self.run(application, jid, password, JID(None, [muc, server, None]), channels)
 
     def run(self, application, jidstr, password, muc, channels, anon=True):
 
         self.xmppclient = XMPPClient(JID(jidstr), password)
-        if self.cfg.has_option('database_xmpp', 'debug') and \
-                self.cfg.getboolean('database_xmpp', 'debug') == True:
-            self.xmppclient.logTraffic = True # DEBUG HERE
+        if CONFIG.has_option('database_xmpp', 'debug') and \
+                CONFIG.getboolean('database_xmpp', 'debug') == True:
+            self.xmppclient.logTraffic = True  # DEBUG HERE
         (user, host, resource) = jid.parse(jidstr)
         self.muc = XMPPLoggerProtocol(
-            muc, channels.keys(), user + '-' + resource)
+            muc, list(channels.keys()), user + '-' + resource)
         self.muc.setHandlerParent(self.xmppclient)
         self.xmppclient.setServiceParent(application)
         self.signals = {}
@@ -94,14 +100,13 @@ class DBLogger(dblog.DBLogger):
 
     def broadcast(self, msgtype, msg):
         if msgtype in self.signals:
-            self.report(msgtype, '%s@%s' %
-                (self.signals[msgtype], self.muc.server) , msg)
+            self.report(msgtype, '{}@{}'.format(self.signals[msgtype], self.muc.server), msg)
 
     def report(self, msgtype, to, xmsg):
         msg = {}
         msg['type'] = msgtype
         msg['message'] = xmsg
-        msgJson = json.dumps(msg,indent=5)
+        msgJson = json.dumps(msg, indent=5)
         self.muc.groupChat(self.muc.jrooms, msgJson)
 
     # We have to return an unique ID
@@ -153,7 +158,7 @@ class DBLogger(dblog.DBLogger):
         ses = {}
         ses['session'] = session
         ses['command'] = 'unknown'
-        ses['input']  = args['input']
+        ses['input'] = args['input']
         self.broadcast('command', ses)
 
     def handleInput(self, session, args):

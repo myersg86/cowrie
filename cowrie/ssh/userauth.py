@@ -5,17 +5,24 @@
 This module contains ...
 """
 
+from __future__ import division, absolute_import
+
 import struct
 
 from twisted.python import log
+from twisted.python.compat import _bytesChr as chr
+from twisted.python.failure import Failure
 from twisted.internet import defer
 
 from twisted.conch.interfaces import IConchUser
 from twisted.conch.ssh import userauth
 from twisted.conch.ssh.common import NS, getNS
+from twisted.conch.ssh.transport import DISCONNECT_PROTOCOL_ERROR
 from twisted.conch import error
 
 from cowrie.core import credentials
+
+from cowrie.core.config import CONFIG
 
 
 class HoneyPotSSHUserAuthServer(userauth.SSHUserAuthServer):
@@ -30,9 +37,9 @@ class HoneyPotSSHUserAuthServer(userauth.SSHUserAuthServer):
     def serviceStarted(self):
         """
         """
-        self.interfaceToMethod[credentials.IUsername] = 'none'
-        self.interfaceToMethod[credentials.IUsernamePasswordIP] = 'password'
-        self.interfaceToMethod[credentials.IPluggableAuthenticationModulesIP] = 'keyboard-interactive'
+        self.interfaceToMethod[credentials.IUsername] = b'none'
+        self.interfaceToMethod[credentials.IUsernamePasswordIP] = b'password'
+        self.interfaceToMethod[credentials.IPluggableAuthenticationModulesIP] = b'keyboard-interactive'
         self.bannerSent = False
         self._pamDeferred = None
         userauth.SSHUserAuthServer.serviceStarted(self)
@@ -40,21 +47,21 @@ class HoneyPotSSHUserAuthServer(userauth.SSHUserAuthServer):
 
     def sendBanner(self):
         """
+        This is the pre-login banner. The post-login banner is the MOTD file
         Display contents of <honeyfs>/etc/issue.net
         """
         if self.bannerSent:
             return
         self.bannerSent = True
         try:
-            honeyfs = self.portal.realm.cfg.get('honeypot', 'contents_path')
-            issuefile = honeyfs + "/etc/issue.net"
+            issuefile = CONFIG.get('honeypot', 'contents_path') + "/etc/issue.net"
             data = open(issuefile).read()
         except IOError:
             return
         if not data or not len(data.strip()):
             return
         self.transport.sendPacket(
-            userauth.MSG_USERAUTH_BANNER, NS(data) + NS('en'))
+            userauth.MSG_USERAUTH_BANNER, NS(data) + NS(b'en'))
 
 
     def ssh_USERAUTH_REQUEST(self, packet):
@@ -69,8 +76,8 @@ class HoneyPotSSHUserAuthServer(userauth.SSHUserAuthServer):
         We subclass to intercept non-dsa/rsa keys, or Conch will crash on ecdsa..
         """
         algName, blob, rest = getNS(packet[1:], 2)
-        if not algName in ('ssh-rsa', 'ssh-dsa'):
-            log.msg( "Attempted public key authentication with %s algorithm" % (algName,))
+        if algName not in (b'ssh-rsa', b'ssh-dsa'):
+            log.msg("Attempted public key authentication with {} algorithm".format(algName))
             return defer.fail(error.ConchError("Incorrect signature"))
         return userauth.SSHUserAuthServer.auth_publickey(self, packet)
 
@@ -91,8 +98,7 @@ class HoneyPotSSHUserAuthServer(userauth.SSHUserAuthServer):
         password = getNS(packet[1:])[0]
         srcIp = self.transport.transport.getPeer().host
         c = credentials.UsernamePasswordIP(self.user, password, srcIp)
-        return self.portal.login(c, srcIp,
-            IConchUser).addErrback(self._ebPassword)
+        return self.portal.login(c, srcIp, IConchUser).addErrback(self._ebPassword)
 
 
     def auth_keyboard_interactive(self, packet):
@@ -104,15 +110,11 @@ class HoneyPotSSHUserAuthServer(userauth.SSHUserAuthServer):
         Overridden to pass src_ip to credentials.PluggableAuthenticationModulesIP
         """
         if self._pamDeferred is not None:
-            self.transport.sendDisconnect(
-                    transport.DISCONNECT_PROTOCOL_ERROR,
-                    "only one keyboard interactive attempt at a time")
+            self.transport.sendDisconnect(DISCONNECT_PROTOCOL_ERROR, "only one keyboard interactive attempt at a time")
             return defer.fail(error.IgnoreAuthentication())
         src_ip = self.transport.transport.getPeer().host
-        c = credentials.PluggableAuthenticationModulesIP(self.user,
-            self._pamConv, src_ip)
-        return self.portal.login(c, src_ip,
-            IConchUser).addErrback(self._ebPassword)
+        c = credentials.PluggableAuthenticationModulesIP(self.user, self._pamConv, src_ip)
+        return self.portal.login(c, src_ip, IConchUser).addErrback(self._ebPassword)
 
 
     def _pamConv(self, items):
@@ -128,9 +130,9 @@ class HoneyPotSSHUserAuthServer(userauth.SSHUserAuthServer):
         """
         resp = []
         for message, kind in items:
-            if kind == 1: # Password
+            if kind == 1:  # Password
                 resp.append((message, 0))
-            elif kind == 2: # Text
+            elif kind == 2:  # Text
                 resp.append((message, 1))
             elif kind in (3, 4):
                 return defer.fail(error.ConchError(
@@ -138,7 +140,7 @@ class HoneyPotSSHUserAuthServer(userauth.SSHUserAuthServer):
             else:
                 return defer.fail(error.ConchError(
                     'bad PAM auth kind %i' % (kind,)))
-        packet = NS('') + NS('') + NS('')
+        packet = NS(b'') + NS(b'') + NS(b'')
         packet += struct.pack('>L', len(resp))
         for prompt, echo in resp:
             packet += NS(prompt)
@@ -171,7 +173,6 @@ class HoneyPotSSHUserAuthServer(userauth.SSHUserAuthServer):
                 raise error.ConchError(
                     "{:d} bytes of extra data".format(len(packet)))
         except:
-            d.errback(failure.Failure())
+            d.errback(Failure())
         else:
             d.callback(resp)
-

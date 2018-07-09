@@ -2,7 +2,9 @@
 # Copyright (c) 2014 Peter Reuterås <peter@reuteras.com>
 # See the COPYRIGHT file for more information
 
-from cowrie.core.honeypot import HoneyPotCommand
+from __future__ import division, absolute_import
+
+from cowrie.shell.command import HoneyPotCommand
 
 commands = {}
 
@@ -27,9 +29,9 @@ lo        Link encap:Local Loopback
           TX packets:110 errors:0 dropped:0 overruns:0 carrier:0
           collisions:0 txqueuelen:0
           RX bytes:19932 (19.9 KB)  TX bytes:19932 (19.9 KB)""" % \
-        (self.protocol.kippoIP,
-        self.protocol.kippoIP.rsplit('.', 1)[0])
-        self.write(l+'\n')
+            (self.protocol.kippoIP,
+             self.protocol.kippoIP.rsplit('.', 1)[0])
+        self.write('{0}\n'.format(l))
 
 commands['/sbin/ifconfig'] = command_ifconfig
 
